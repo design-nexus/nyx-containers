@@ -11,7 +11,7 @@ Reuse chrome, theme tokens, widgets, icons, and shortcuts from the pinned
 nyx-design crates. Page layout is a hypervisor dashboard, not STYLE.md's
 settings list.
 Run essential targeted checks only. Do not download models or run inference for
-routine verification. Install app updates without opening/restarting them.
+routine verification. Install app updates without opening/restarting them. Restarting background services after installation is allowed.
 Common guidance: https://github.com/design-nexus/nyx/blob/main/docs/AGENTS_COMMON.md
 This file carries the essential common rules so offline work remains possible.
 
