@@ -459,6 +459,13 @@ pub async fn inspect(host: HostId, remote: &RemoteProfile, name: &str) -> Result
     Ok(detail)
 }
 
+/// The container's whole `docker inspect` document.
+pub async fn inspect_raw(host: HostId, remote: &RemoteProfile, id: &str) -> Result<serde_json::Value, String> {
+    let docker = connect(host, remote).await?;
+    let info = docker.inspect_container(id, None).await.map_err(|e| e.to_string())?;
+    serde_json::to_value(info).map_err(|e| e.to_string())
+}
+
 pub async fn stats(host: HostId, remote: &RemoteProfile, name: &str, seq: u64) -> Result<ResourceSample, String> {
     let docker = connect(host, remote).await?;
     stats_on(&docker, host, name, seq).await

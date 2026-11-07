@@ -5,6 +5,7 @@
 
 pub mod display;
 pub mod hardware;
+pub mod inspect;
 
 use crate::history;
 use crate::models::{Engine, HostId, InstanceSnap, Kind, RunState, SnapAction, Snapshot, Stack, TermKind, Workload, WorkloadDetail};
@@ -125,7 +126,7 @@ fn views_for(target: &Target, snap: &Snapshot) -> Vec<(&'static str, &'static st
                 ("hardware", "Hardware"),
                 ("options", "Options"),
             ],
-            _ => vec![("summary", "Summary"), ("logs", "Logs"), ("terminal", "Terminal")],
+            _ => vec![("summary", "Summary"), ("logs", "Logs"), ("terminal", "Terminal"), ("inspect", "Inspect")],
         },
     }
 }
@@ -477,6 +478,10 @@ fn build_view(ui: &Rc<TabUi>, view: &str) -> gtk::Widget {
                 *ui.editor.borrow_mut() = Some(editor);
                 widget
             }
+            None => gone(),
+        },
+        ("inspect", _) => match w {
+            Some(w) => inspect::build(&w),
             None => gone(),
         },
         ("snapshots", _) => match w {

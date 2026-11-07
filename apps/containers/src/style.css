@@ -918,3 +918,9 @@ levelbar.host-bar block.filled {
   padding-left: 0;
   padding-right: 0;
 }
+
+.inspect-list .settings-option {
+  min-height: 34px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}

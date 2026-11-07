@@ -31,6 +31,7 @@ pub enum Job {
     LoadConfig { host: HostId, name: String },
     SaveConfig { host: HostId, name: String, config: Box<crate::engines::incus::InstanceConfig> },
     HostInfo { host: HostId },
+    InspectRaw { host: HostId, id: String, key: String },
     Prune { host: HostId, what: crate::models::Prune },
     Diagnose,
     Fix(CheckId),
@@ -123,6 +124,10 @@ pub fn start() {
                                         crate::tabs::hardware::apply_failed(host, &name);
                                     }
                                 });
+                            }
+                            Some(Job::InspectRaw { host, id, key }) => {
+                                let result = crate::engines::docker::inspect_raw(host, &current_remote(), &id).await;
+                                on_main(move || crate::tabs::inspect::apply(&key, result));
                             }
                             Some(Job::HostInfo { host }) => {
                                 let remote = current_remote();
@@ -265,6 +270,10 @@ pub fn load_config(host: HostId, name: impl Into<String>) {
 
 pub fn save_config(host: HostId, name: impl Into<String>, config: crate::engines::incus::InstanceConfig) {
     send(Job::SaveConfig { host, name: name.into(), config: Box::new(config) });
+}
+
+pub fn inspect_raw(host: HostId, id: impl Into<String>, key: impl Into<String>) {
+    send(Job::InspectRaw { host, id: id.into(), key: key.into() });
 }
 
 pub fn host_info(host: HostId) {
