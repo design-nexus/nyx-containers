@@ -330,6 +330,22 @@ pub fn is_narrow() -> bool {
     NARROW.with(|n| n.get())
 }
 
+/// A VM display takes the whole screen: the window goes fullscreen and its header,
+/// sidebar, tabs and toolbars hide.
+pub fn set_display_fullscreen(on: bool) {
+    let Some(ui) = ui() else { return };
+    let u = ui.borrow();
+    u.header.root.set_visible(!on);
+    u.sidebar.root.set_visible(!on);
+    u.tab_row.root.set_visible(!on);
+    tabs::set_toolbars_visible(!on);
+    if on {
+        u.window.fullscreen();
+    } else {
+        u.window.unfullscreen();
+    }
+}
+
 pub fn toggle_sidebar() {
     prefs::update(|p| p.sidebar_collapsed = !p.sidebar_collapsed);
     let Some(ui) = ui() else { return };

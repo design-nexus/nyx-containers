@@ -212,6 +212,14 @@ pub fn closed(key: &str) {
     }
 }
 
+pub fn set_toolbars_visible(visible: bool) {
+    for ui in TABS.with(|t| t.borrow().values().cloned().collect::<Vec<_>>()) {
+        if let Some(bar) = ui.root.first_child() {
+            bar.set_visible(visible);
+        }
+    }
+}
+
 /// A terminal or a captured VM display has the keyboard.
 pub fn focus_grabbed(window: &gtk::ApplicationWindow) -> bool {
     gtk::prelude::GtkWindowExt::focus(window).is_some_and(|f| {
@@ -366,11 +374,6 @@ fn show(ui: &Rc<TabUi>, view: &str) {
         ui.built.borrow_mut().insert(view.to_string());
     }
     ui.views.set_visible_child_name(view);
-    if view == "display"
-        && let Some(d) = ui.display.borrow().as_ref()
-    {
-        d.focus();
-    }
 }
 
 fn build_view(ui: &Rc<TabUi>, view: &str) -> gtk::Widget {

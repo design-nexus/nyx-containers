@@ -27,6 +27,7 @@ pub enum Job {
     TermInput { seq: u64, data: Vec<u8> },
     TermResize { seq: u64, cols: u16, rows: u16 },
     StopTerm { seq: u64 },
+    StartVga { host: HostId, name: String, seq: u64, socket: std::path::PathBuf },
     Diagnose,
     Fix(CheckId),
     CreateNet(Box<NetSpec>),
@@ -93,6 +94,7 @@ pub fn start() {
                             Some(Job::StartTerm { host, engine, name, seq, kind }) => {
                                 spawn_term(&live, host, engine, name, seq, kind);
                             }
+                            Some(Job::StartVga { host, name, seq, socket }) => spawn_vga(&live, host, name, seq, socket),
                             Some(Job::TermInput { seq, data }) => send_term(&live, seq, TermEvent::Data(data)),
                             Some(Job::TermResize { seq, cols, rows }) => send_term(&live, seq, TermEvent::Resize { cols, rows }),
                             Some(Job::StopTerm { seq }) => {
@@ -197,6 +199,11 @@ pub fn stop_logs(seq: u64) {
 
 pub fn start_term(host: HostId, engine: Engine, name: impl Into<String>, seq: u64, kind: TermKind) {
     send(Job::StartTerm { host, engine, name: name.into(), seq, kind });
+}
+
+/// Serve a VM's display on `socket`; stop it with [`stop_term`].
+pub fn start_vga(host: HostId, name: impl Into<String>, seq: u64, socket: std::path::PathBuf) {
+    send(Job::StartVga { host, name: name.into(), seq, socket });
 }
 
 pub fn term_input(seq: u64, data: Vec<u8>) {
@@ -434,6 +441,27 @@ fn spawn_term(live: &Arc<Mutex<Live>>, host: HostId, engine: Engine, name: Strin
         let work = ops::session(&remote, host, engine, &name, kind, ev_rx, tx, stop_rx);
         let (_, result) = tokio::join!(pump, work);
         on_main(move || crate::window::apply_term_done(seq, result));
+    });
+}
+
+fn spawn_vga(live: &Arc<Mutex<Live>>, host: HostId, name: String, seq: u64, socket: std::path::PathBuf) {
+    let (stop_tx, stop_rx) = watch::channel(false);
+    if let Ok(mut g) = live.lock()
+        && let Some(old) = g.term_stop.insert(seq, stop_tx)
+    {
+        let _ = old.send(true);
+    }
+    tokio::spawn(async move {
+        let remote = current_remote();
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+        let path = socket.clone();
+        let notify = async move {
+            let result = ready_rx.await.unwrap_or_else(|_| Err("The display stopped before it started.".into()));
+            on_main(move || crate::tabs::display::apply_ready(seq, result.map(|_| path)));
+        };
+        let work = crate::engines::incus::vga_proxy(host, &remote, &name, socket, ready_tx, stop_rx);
+        let (_, result) = tokio::join!(notify, work);
+        on_main(move || crate::tabs::display::apply_ended(seq, result));
     });
 }
 

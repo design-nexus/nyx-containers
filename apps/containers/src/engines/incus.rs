@@ -1137,6 +1137,152 @@ pub async fn session(
     run_ws(&conn, remote, &data_path, control_secret.as_deref().map(|s| (op_id.as_str(), s)), events, out, cancel).await
 }
 
+/// Where a VGA console's websockets are opened: a copy for each SPICE channel.
+#[derive(Clone)]
+enum WsTarget {
+    Unix(PathBuf),
+    Https(String, ClientConfig),
+}
+
+/// Serve a VM's SPICE display on the Unix socket `socket`. Incus lets the console's
+/// data websocket be opened once per SPICE channel, so every connection to the
+/// socket gets a websocket of its own. `ready` fires once the socket listens.
+pub async fn vga_proxy(
+    host: HostId,
+    remote: &RemoteProfile,
+    name: &str,
+    socket: PathBuf,
+    ready: tokio::sync::oneshot::Sender<Result<(), String>>,
+    mut cancel: watch::Receiver<bool>,
+) -> Result<(), String> {
+    let setup = async {
+        let conn = connect(host, remote).await?;
+        let body = json!({ "type": "vga", "width": 0, "height": 0 });
+        let meta = start_operation(&conn, Method::POST, &format!("/1.0/instances/{}/console", enc(name)), Some(body)).await?;
+        let (op_id, fds) = op_id_and_fds(&meta)?;
+        let data = fds.get("0").cloned().ok_or_else(|| "Incus did not return a display websocket".to_string())?;
+        let target = match &conn {
+            Conn::Unix(path) => WsTarget::Unix(path.clone()),
+            Conn::Https { url, .. } => WsTarget::Https(url.clone(), tls_setup(remote).map_err(String::from)?.0),
+        };
+        let control = fds.get("control").map(|c| format!("/1.0/operations/{}/websocket?secret={}", enc(&op_id), enc(c)));
+        let data_path = format!("/1.0/operations/{}/websocket?secret={}", enc(&op_id), enc(&data));
+        let _ = std::fs::remove_file(&socket);
+        if let Some(dir) = socket.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+        let listener = tokio::net::UnixListener::bind(&socket).map_err(|e| format!("display socket: {e}"))?;
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600));
+        Ok::<_, String>((listener, target, control, data_path))
+    };
+    let (listener, target, control, data_path) = match setup.await {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = ready.send(Err(e.clone()));
+            return Err(e);
+        }
+    };
+    // The console lasts as long as its control socket stays open.
+    let control_task = control.map(|path| {
+        let target = target.clone();
+        tokio::spawn(async move {
+            match target {
+                WsTarget::Unix(p) => {
+                    if let Ok(mut ws) = unix_ws(&p, &path).await {
+                        while let Some(Ok(_)) = ws.next().await {}
+                    }
+                }
+                WsTarget::Https(url, tls) => {
+                    if let Ok(mut ws) = https_ws(&url, &tls, &path).await {
+                        while let Some(Ok(_)) = ws.next().await {}
+                    }
+                }
+            }
+        })
+    });
+    let _ = ready.send(Ok(()));
+    let mut bridges = Vec::new();
+    loop {
+        tokio::select! {
+            changed = cancel.changed() => {
+                if changed.is_err() || *cancel.borrow() {
+                    break;
+                }
+            }
+            accepted = listener.accept() => {
+                let Ok((stream, _)) = accepted else { break };
+                let (target, path) = (target.clone(), data_path.clone());
+                bridges.push(tokio::spawn(async move {
+                    match target {
+                        WsTarget::Unix(p) => {
+                            if let Ok(ws) = unix_ws(&p, &path).await {
+                                bridge(ws, stream).await;
+                            }
+                        }
+                        WsTarget::Https(url, tls) => {
+                            if let Ok(ws) = https_ws(&url, &tls, &path).await {
+                                bridge(ws, stream).await;
+                            }
+                        }
+                    }
+                }));
+            }
+        }
+    }
+    for b in bridges {
+        b.abort();
+    }
+    if let Some(t) = control_task {
+        t.abort();
+    }
+    let _ = std::fs::remove_file(&socket);
+    Ok(())
+}
+
+async fn bridge<S>(ws: S, stream: tokio::net::UnixStream)
+where
+    S: Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>>
+        + Sink<Message, Error = tokio_tungstenite::tungstenite::Error>
+        + Unpin,
+{
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let (mut wtx, mut wrx) = ws.split();
+    let (mut r, mut w) = stream.into_split();
+    let up = async {
+        let mut buf = vec![0u8; 64 * 1024];
+        loop {
+            match r.read(&mut buf).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    if wtx.send(Message::Binary(buf[..n].to_vec().into())).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+        let _ = wtx.close().await;
+    };
+    let down = async {
+        while let Some(Ok(msg)) = wrx.next().await {
+            match msg {
+                Message::Binary(b) => {
+                    if w.write_all(&b).await.is_err() {
+                        break;
+                    }
+                }
+                Message::Close(_) => break,
+                _ => {}
+            }
+        }
+        let _ = w.shutdown().await;
+    };
+    tokio::select! {
+        _ = up => {}
+        _ = down => {}
+    }
+}
+
 async fn run_ws(
     conn: &Conn,
     remote: &RemoteProfile,

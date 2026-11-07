@@ -658,3 +658,41 @@ window.containers-window .tab-views button.segment {
   font-family: "JetBrains Mono", monospace;
   font-size: 11.5px;
 }
+
+/* ---------- VM display ---------- */
+
+.display-bar {
+  padding: 0 16px 6px;
+}
+
+.display-status {
+  font-size: 11.5px;
+  color: @theme_text_tertiary;
+}
+
+.display-well {
+  background: mix(@theme_bg, @theme_shadow, 0.7);
+  border-radius: var(--nyx-radius-card);
+}
+
+.display-view.fullscreen .tab-pad {
+  padding: 0;
+}
+
+.display-view.fullscreen .display-well {
+  border-radius: 0;
+  background: black;
+}
+
+.display-fs-bar {
+  margin-top: 10px;
+  padding: 4px 4px 4px 12px;
+  background: alpha(@theme_popover, 0.94);
+  border-radius: var(--nyx-radius-card);
+  box-shadow: 0 2px 6px alpha(@theme_shadow, 0.25), 0 16px 40px alpha(@theme_shadow, 0.45);
+}
+
+.display-fs-name {
+  font-weight: 500;
+  margin: 0 10px 0 6px;
+}

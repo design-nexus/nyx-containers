@@ -25,7 +25,7 @@ thread_local! {
     static SEQ: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
-fn next_seq() -> u64 {
+pub fn next_seq() -> u64 {
     SEQ.with(|s| {
         let n = s.get() + 1;
         s.set(n);

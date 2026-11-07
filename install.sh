@@ -22,7 +22,7 @@ die() { printf '\033[31m==>\033[0m %s\n' "$*" >&2; exit 1; }
 app_info() {
   dir=$1 pkg="nyx-$1" bins="nyx-$1" deps="" ids=""
   case $1 in
-    containers) ids="Containers" deps="gtk4 vte4 gtksourceview5 pkgconf gcc git curl" ;;
+    containers) ids="Containers" deps="gtk4 vte4 gtksourceview5 spice-gtk pkgconf gcc git curl" ;;
     *) return 1 ;;
   esac
 }
@@ -64,12 +64,12 @@ ensure_sudo() {
   if sudo -n true 2>/dev/null; then
     return
   fi
-  say "Administrator access is needed to install Docker, Incus, and VTE."
+  say "Administrator access is needed to install Docker, Incus, VTE and SPICE."
   sudo -v || die "sudo is required to finish setup."
 }
 
 engines_ready() {
-  pkg_ok docker && pkg_ok docker-compose && pkg_ok incus && pkg_ok vte4 || return 1
+  pkg_ok docker && pkg_ok docker-compose && pkg_ok incus && pkg_ok vte4 && pkg_ok spice-gtk || return 1
   in_group docker && in_group incus-admin && in_group incus || return 1
   svc_ok docker.socket || svc_ok docker || return 1
   svc_ok incus || return 1
@@ -90,6 +90,7 @@ setup_engines() {
   pkg_ok docker-compose || pkgs+=(docker-compose)
   pkg_ok incus || pkgs+=(incus)
   pkg_ok vte4 || pkgs+=(vte4)
+  pkg_ok spice-gtk || pkgs+=(spice-gtk)
   if ((${#pkgs[@]})); then
     say "Installing ${pkgs[*]}"
     run pacman -S --needed --noconfirm "${pkgs[@]}"
@@ -129,6 +130,7 @@ else
   setup_engines
 fi
 pkg-config --exists vte-2.91-gtk4 || die "vte4 is needed to build the terminal (pacman -S vte4)."
+pkg-config --exists spice-client-glib-2.0 || die "spice-gtk is needed for VM displays (pacman -S spice-gtk)."
 
 say "Building nyx-containers"
 (cd "$root" && cargo build --release --locked -p nyx-containers)
