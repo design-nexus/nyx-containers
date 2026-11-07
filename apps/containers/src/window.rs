@@ -225,6 +225,7 @@ fn build(app: &gtk::Application) {
             if narrow != NARROW.with(|n| n.get()) {
                 NARROW.with(|n| n.set(narrow));
                 crate::sections::cards::set_narrow(narrow);
+                glib::idle_add_local_once(repaint);
                 if let Some(ui) = ui() {
                     ui.borrow().search.set_width_chars(if narrow { 14 } else { 30 });
                 }
@@ -634,6 +635,11 @@ fn paint_counts(u: &Ui) {
         let name = if remote.configured() { remote.display_name() } else { "Add a remote".into() };
         item.set_title(&name);
     }
+}
+
+/// Repaint every page from the current inventory.
+pub fn repaint() {
+    paint_lists();
 }
 
 fn paint_lists() {

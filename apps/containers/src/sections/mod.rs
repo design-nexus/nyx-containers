@@ -10,6 +10,7 @@ pub mod diagnose;
 pub mod host;
 pub mod images;
 pub mod networks;
+pub mod rescards;
 pub mod session;
 pub mod settings;
 pub mod stacks;
@@ -35,9 +36,9 @@ pub fn all() -> Vec<Section> {
         s("lxc", "Containers (LXC)", "package-x-generic-symbolic", "Workloads", "Incus system containers.", cards::build_lxc, false),
         s("docker", "Docker", "application-x-executable-symbolic", "Workloads", "Docker containers.", cards::build_docker, false),
         s("stacks", "Stacks", "view-list-symbolic", "Workloads", "Docker Compose projects.", cards::build_stacks, false),
-        s("images", "Images", "media-optical-symbolic", "Resources", "Container and VM images.", images::build, true),
-        s("storage", "Storage", "drive-harddisk-symbolic", "Resources", "Volumes and storage pools.", storage::build, true),
-        s("networks", "Networks", "network-wired-symbolic", "Resources", "Docker and Incus networks.", networks::build, true),
+        s("images", "Images", "media-optical-symbolic", "Resources", "Container and VM images.", images::build, false),
+        s("storage", "Storage", "drive-harddisk-symbolic", "Resources", "Volumes and storage pools.", storage::build, false),
+        s("networks", "Networks", "network-wired-symbolic", "Resources", "Docker and Incus networks.", networks::build, false),
         s("host", "This computer", "computer-symbolic", "Hosts", "This computer's resources and engines.", host::build_local, false),
         s("homelab", "Remote", "network-server-symbolic", "Hosts", "The remote server's resources and engines.", host::build_remote, false),
         Section {

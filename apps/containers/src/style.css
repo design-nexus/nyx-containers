@@ -941,3 +941,38 @@ window.containers-window .nav-group.section-hosts {
   color: @sec_hosts;
   border-bottom-color: alpha(@sec_hosts, 0.35);
 }
+
+/* ---------- Resources cards ---------- */
+
+.res-card {
+  min-height: 60px;
+  padding: 8px 10px 8px 12px;
+}
+
+.res-tile {
+  border-radius: 9px;
+}
+
+.res-tile.c-blue { background: alpha(@sw_blue, 0.16); color: @sw_blue; }
+.res-tile.c-violet { background: alpha(@sw_violet, 0.16); color: @sw_violet; }
+.res-tile.c-pink { background: alpha(@sw_pink, 0.16); color: @sw_pink; }
+.res-tile.c-red { background: alpha(@sw_red, 0.16); color: @sw_red; }
+.res-tile.c-coral { background: alpha(@sw_coral, 0.16); color: @sw_coral; }
+.res-tile.c-amber { background: alpha(@sw_amber, 0.16); color: @sw_amber; }
+.res-tile.c-green { background: alpha(@sw_green, 0.16); color: @sw_green; }
+.res-tile.c-teal { background: alpha(@sw_teal, 0.16); color: @sw_teal; }
+.res-tile.c-graphite { background: alpha(@sw_graphite, 0.14); color: @sw_graphite; }
+
+.res-fact {
+  font-size: 12px;
+}
+
+.res-chips {
+  margin-top: 3px;
+}
+
+window.containers-window button.res-remove {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12.5px;
+}

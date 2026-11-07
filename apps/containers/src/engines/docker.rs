@@ -675,22 +675,36 @@ pub fn builtin_network(name: &str) -> bool {
 pub async fn list_networks(host: HostId, remote: &RemoteProfile) -> Result<Vec<NetRow>, String> {
     let docker = connect(host, remote).await?;
     let nets = docker.list_networks(None).await.map_err(|e| e.to_string())?;
-    Ok(nets
-        .into_iter()
-        .filter_map(|n| {
-            let name = n.name?;
-            let subnet = n.ipam.and_then(|i| i.config).and_then(|c| c.into_iter().find_map(|x| x.subnet));
-            Some(NetRow {
+    // The list leaves out who's attached; inspecting each network says.
+    let rows = nets.into_iter().filter_map(|n| n.name.clone().map(|name| (name, n))).map(|(name, n)| {
+        let docker = docker.clone();
+        async move {
+            let configs = n.ipam.and_then(|i| i.config).unwrap_or_default();
+            let v4 = configs.iter().find(|c| c.subnet.as_deref().is_some_and(|s| !s.contains(':')));
+            let v6 = configs.iter().find(|c| c.subnet.as_deref().is_some_and(|s| s.contains(':')));
+            let mut members: Vec<String> = docker
+                .inspect_network(&name, None::<bollard::query_parameters::InspectNetworkOptions>)
+                .await
+                .ok()
+                .and_then(|i| i.containers)
+                .map(|c| c.into_values().filter_map(|e| e.name).collect())
+                .unwrap_or_default();
+            members.sort();
+            NetRow {
                 host,
                 engine: Engine::Docker,
                 name: name.clone(),
                 driver: n.driver.unwrap_or_default(),
-                subnet,
-                used_by: 0,
+                subnet: v4.and_then(|c| c.subnet.clone()),
+                gateway: v4.and_then(|c| c.gateway.clone()),
+                ipv6: v6.and_then(|c| c.subnet.clone()),
+                used_by: members.len(),
+                members,
                 removable: !builtin_network(&name),
-            })
-        })
-        .collect())
+            }
+        }
+    });
+    Ok(futures_util::future::join_all(rows).await)
 }
 
 pub async fn create_network(host: HostId, remote: &RemoteProfile, name: &str, driver: &str) -> Result<String, String> {

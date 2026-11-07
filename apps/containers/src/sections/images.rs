@@ -1,91 +1,93 @@
-use crate::models::{Engine, HostFilter, HostId, Image, ImageDetail, Snapshot};
-use crate::widgets::{self, Col, OpsTable, Page};
+use crate::models::{Engine, HostFilter, HostId, ImageDetail, Snapshot};
+use crate::sections::rescards::{self, Item, ResPage};
+use crate::widgets::{self, Page};
 use crate::{prefs, window, worker};
 use gtk::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-struct List {
-    table: OpsTable,
-    count: gtk::Label,
-}
-
 thread_local! {
-    static UI: RefCell<Option<Rc<List>>> = const { RefCell::new(None) };
-}
-
-fn cols() -> [Col; 5] {
-    [
-        widgets::col("name", "Name", true, false, 0),
-        widgets::col("host", "Host", false, false, 88),
-        widgets::col("engine", "Engine", false, false, 80),
-        widgets::col("size", "Size", false, true, 88),
-        widgets::col("actions", "", false, true, 72),
-    ]
+    static UI: RefCell<Option<Rc<ResPage>>> = const { RefCell::new(None) };
 }
 
 pub fn build(page: &Page) {
-    page.fill();
-    let (bar, count, actions) = widgets::page_header();
-    let pull = widgets::primary_button("folder-download-symbolic", "Pull an image");
-    pull.connect_clicked(|_| open_pull());
-    actions.append(&pull);
-    page.body.append(&bar);
-    let table = OpsTable::new(
-        &cols(),
-        "media-optical-symbolic",
-        "No images",
-        "Nothing matches this host filter. Pull an image to add one.",
+    let ui = rescards::build(
+        page,
+        ("media-optical-symbolic", "No images", "Pull one, or create a workload and its image comes along."),
+        Some(("folder-download-symbolic", "Pull an image", Rc::new(open_pull))),
     );
-    page.body.append(&table.root);
-    UI.with(|u| *u.borrow_mut() = Some(Rc::new(List { table, count })));
+    UI.with(|u| *u.borrow_mut() = Some(ui));
+    if let Some(snap) = window::snapshot() {
+        refresh(&snap, window::host_filter(), "");
+    }
 }
 
 pub fn refresh(snapshot: &Snapshot, host: HostFilter, query: &str) {
-    let Some(list) = UI.with(|u| u.borrow().clone()) else { return };
-    list.table.clear();
+    let Some(ui) = UI.with(|u| u.borrow().clone()) else { return };
     let q = query.trim().to_ascii_lowercase();
-    let mut shown = 0;
-    for img in snapshot.images(host) {
-        if !q.is_empty()
-            && !img.name.to_ascii_lowercase().contains(&q)
-            && !img.engine.label().to_ascii_lowercase().contains(&q)
-            && !img.id.to_ascii_lowercase().contains(&q)
-        {
-            continue;
-        }
-        list.table.push(image_cells(img));
-        shown += 1;
-    }
-    list.table.set_count(shown);
-    widgets::set_count(&list.count, shown, "image");
-}
-
-fn image_cells(img: &Image) -> Vec<gtk::Widget> {
-    let actions = widgets::actions_cell();
-    let inspect = widgets::icon_button("dialog-information-symbolic", "Inspect");
-    let (host, engine, id) = (img.host, img.engine, img.id.clone());
-    inspect.connect_clicked(move |_| worker::inspect_image(host, engine, id.clone()));
-    let del = widgets::icon_button("user-trash-symbolic", "Remove");
-    let (host, engine, id, name) = (img.host, img.engine, img.id.clone(), img.name.clone());
-    let host_label = window::host_name(host);
-    del.connect_clicked(move |_| {
-        let body = format!("Remove image {name} from {host_label} {}? This cannot be undone.", engine.label());
-        let (id, name, host_label) = (id.clone(), name.clone(), host_label.clone());
-        widgets::confirm("Remove image?", &body, "Remove", move || {
-            window::toast(&format!("Removing {name} from {host_label}…"));
-            worker::remove_image(host, engine, id.clone());
-        });
-    });
-    actions.append(&inspect);
-    actions.append(&del);
-    vec![
-        widgets::td(&img.name),
-        widgets::td_dim(&window::host_name(img.host)),
-        widgets::td_dim(img.engine.label()),
-        widgets::td_dim(&crate::models::format_bytes(img.size)),
-        actions.upcast(),
-    ]
+    let mut images: Vec<_> = snapshot.images(host).filter(|i| q.is_empty() || i.name.to_ascii_lowercase().contains(&q) || i.id.to_ascii_lowercase().contains(&q)).collect();
+    images.sort_by_key(|i| (i.engine != Engine::Docker, i.host, i.name.to_ascii_lowercase()));
+    let items = images
+        .into_iter()
+        .map(|img| {
+            let users: Vec<String> = snapshot
+                .workloads
+                .iter()
+                .filter(|w| w.host == img.host && w.engine == Engine::Docker && img.engine == Engine::Docker)
+                .filter(|w| w.image.as_deref().is_some_and(|i| i == img.name || img.id.ends_with(i.trim_start_matches("sha256:")) || format!("{i}:latest") == img.name))
+                .map(|w| w.name.clone())
+                .collect();
+            let dangling = img.name.contains("<none>") || img.name.chars().all(|c| c.is_ascii_hexdigit());
+            let mut tags = Vec::new();
+            if img.engine == Engine::Docker {
+                if dangling {
+                    tags.push(("Dangling".to_string(), "warning"));
+                } else if users.is_empty() {
+                    tags.push(("Unused".to_string(), ""));
+                } else {
+                    tags.push((format!("In use by {}", users.len()), "accent"));
+                }
+            }
+            let mut sub = vec![crate::sections::cards::short_bytes(img.size)];
+            if let Some(d) = img.created.as_deref().and_then(rescards::date) {
+                sub.push(format!("created {d}"));
+            }
+            let short_id: String = img.id.trim_start_matches("sha256:").chars().take(12).collect();
+            let mut actions: Vec<gtk::Widget> = Vec::new();
+            if img.engine == Engine::Docker && !dangling {
+                let pull = widgets::icon_button("folder-download-symbolic", "Pull a newer copy");
+                let (h, name) = (img.host, img.name.clone());
+                pull.connect_clicked(move |_| {
+                    window::toast(&format!("Pulling {name}…"));
+                    worker::pull_image(h, Engine::Docker, name.clone());
+                });
+                actions.push(pull.upcast());
+            }
+            let inspect = widgets::icon_button("dialog-information-symbolic", "Details");
+            let (h, e, id) = (img.host, img.engine, img.id.clone());
+            inspect.connect_clicked(move |_| worker::inspect_image(h, e, id.clone()));
+            actions.push(inspect.upcast());
+            let (h, e, id, name) = (img.host, img.engine, img.id.clone(), img.name.clone());
+            actions.push(rescards::remove_button(move || {
+                window::toast(&format!("Removing {name}…"));
+                worker::remove_image(h, e, id.clone());
+            }));
+            Item {
+                group: format!("{} · {}", img.engine.label(), window::host_name(img.host)),
+                engine: img.engine,
+                icon: if img.engine == Engine::Docker { "application-x-executable-symbolic" } else { "media-optical-symbolic" },
+                color: if img.engine == Engine::Docker { "blue" } else { "violet" },
+                title: img.name.clone(),
+                tags,
+                sub: sub.join(" · "),
+                chips: users,
+                facts: vec![("ID".into(), short_id)],
+                bar: None,
+                actions,
+            }
+        })
+        .collect();
+    ui.paint(items);
 }
 
 pub fn show_detail(detail: ImageDetail) {

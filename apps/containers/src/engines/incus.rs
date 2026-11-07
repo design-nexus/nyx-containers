@@ -961,13 +961,25 @@ pub async fn list_networks(host: HostId, remote: &RemoteProfile) -> Result<Vec<N
         .into_iter()
         .map(|n| {
             let managed = n.managed.unwrap_or(false);
+            let v4 = n.config.get("ipv4.address").cloned().filter(|s| !s.is_empty() && s != "none");
+            let mut members: Vec<String> = n
+                .used_by
+                .iter()
+                .filter(|u| u.contains("/instances/"))
+                .filter_map(|u| u.rsplit('/').next().map(|s| s.split('?').next().unwrap_or(s).to_string()))
+                .collect();
+            members.sort();
+            members.dedup();
             NetRow {
                 host,
                 engine: Engine::Incus,
                 name: n.name,
                 driver: n.kind.unwrap_or_default(),
-                subnet: n.config.get("ipv4.address").cloned().filter(|s| !s.is_empty() && s != "none"),
+                gateway: v4.as_deref().and_then(|a| a.split('/').next()).map(str::to_string),
+                subnet: v4,
+                ipv6: n.config.get("ipv6.address").cloned().filter(|s| !s.is_empty() && s != "none"),
                 used_by: n.used_by.len(),
+                members,
                 removable: managed,
             }
         })

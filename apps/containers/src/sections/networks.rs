@@ -1,93 +1,83 @@
-use crate::models::{Engine, HostFilter, HostId, NetRow, NetSpec, Snapshot};
-use crate::widgets::{self, Col, OpsTable, Page};
+use crate::models::{Engine, HostFilter, HostId, NetSpec, Snapshot};
+use crate::sections::rescards::{self, Item, ResPage};
+use crate::widgets::{self, Page};
 use crate::{prefs, window, worker};
 use gtk::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-struct List {
-    table: OpsTable,
-    count: gtk::Label,
-}
-
 thread_local! {
-    static UI: RefCell<Option<Rc<List>>> = const { RefCell::new(None) };
-}
-
-fn cols() -> [Col; 6] {
-    [
-        widgets::col("name", "Name", true, false, 0),
-        widgets::col("host", "Host", false, false, 88),
-        widgets::col("engine", "Engine", false, false, 80),
-        widgets::col("driver", "Driver", false, false, 96),
-        widgets::col("subnet", "Subnet", false, true, 140),
-        widgets::col("actions", "", false, true, 48),
-    ]
+    static UI: RefCell<Option<Rc<ResPage>>> = const { RefCell::new(None) };
 }
 
 pub fn build(page: &Page) {
-    page.fill();
-    let (bar, count, actions) = widgets::page_header();
-    let create = widgets::primary_button("list-add-symbolic", "New network");
-    create.connect_clicked(|_| open_create());
-    actions.append(&create);
-    page.body.append(&bar);
-    let table = OpsTable::new(
-        &cols(),
-        "network-wired-symbolic",
-        "No networks",
-        "Nothing matches this host filter. Create a bridge network to add one.",
+    let ui = rescards::build(
+        page,
+        ("network-wired-symbolic", "No networks", "Create a bridge to put workloads on a network of their own."),
+        Some(("list-add-symbolic", "New network", Rc::new(open_create))),
     );
-    page.body.append(&table.root);
-    UI.with(|u| *u.borrow_mut() = Some(Rc::new(List { table, count })));
+    UI.with(|u| *u.borrow_mut() = Some(ui));
+    if let Some(snap) = window::snapshot() {
+        refresh(&snap, window::host_filter(), "");
+    }
 }
 
 pub fn refresh(snapshot: &Snapshot, host: HostFilter, query: &str) {
-    let Some(list) = UI.with(|u| u.borrow().clone()) else { return };
-    list.table.clear();
+    let Some(ui) = UI.with(|u| u.borrow().clone()) else { return };
     let q = query.trim().to_ascii_lowercase();
-    let mut shown = 0;
-    for net in snapshot.networks(host) {
-        if !q.is_empty()
-            && !net.name.to_ascii_lowercase().contains(&q)
-            && !net.engine.label().to_ascii_lowercase().contains(&q)
-            && !net.driver.to_ascii_lowercase().contains(&q)
-        {
-            continue;
-        }
-        let row = list.table.push(net_cells(net));
-        row.set_tooltip_text(Some(&format!("{} attached", net.used_by)));
-        shown += 1;
-    }
-    list.table.set_count(shown);
-    widgets::set_count(&list.count, shown, "network");
-}
-
-fn net_cells(net: &NetRow) -> Vec<gtk::Widget> {
-    let subnet = net.subnet.as_deref().unwrap_or("—");
-    let actions = widgets::actions_cell();
-    if net.removable {
-        let del = widgets::icon_button("user-trash-symbolic", "Remove");
-        let (host, engine, name) = (net.host, net.engine, net.name.clone());
-        let host_label = window::host_name(host);
-        del.connect_clicked(move |_| {
-            let body = format!("Remove network {name} from {host_label} {}? This cannot be undone.", engine.label());
-            let (name, host_label) = (name.clone(), host_label.clone());
-            widgets::confirm("Remove network?", &body, "Remove", move || {
-                window::toast(&format!("Removing {name} from {host_label}…"));
-                worker::remove_network(host, engine, name.clone());
-            });
-        });
-        actions.append(&del);
-    }
-    vec![
-        widgets::td(&net.name),
-        widgets::td_dim(&window::host_name(net.host)),
-        widgets::td_dim(net.engine.label()),
-        widgets::td_dim(&net.driver),
-        widgets::td_dim(subnet),
-        actions.upcast(),
-    ]
+    let mut nets: Vec<_> = snapshot
+        .networks(host)
+        .filter(|n| q.is_empty() || n.name.to_ascii_lowercase().contains(&q) || n.driver.to_ascii_lowercase().contains(&q) || n.members.iter().any(|m| m.to_ascii_lowercase().contains(&q)))
+        .collect();
+    // Networks in use first, then by name.
+    nets.sort_by_key(|n| (n.engine != Engine::Incus, n.host, n.members.is_empty(), n.name.to_ascii_lowercase()));
+    let items = nets
+        .into_iter()
+        .map(|n| {
+            let mut tags = vec![(n.driver.clone(), "")];
+            if !n.removable {
+                tags.push((if n.engine == Engine::Docker { "Built in".into() } else { "Unmanaged".into() }, ""));
+            }
+            let mut sub = Vec::new();
+            if let Some(s) = &n.subnet {
+                sub.push(s.clone());
+            }
+            if let Some(g) = &n.gateway {
+                sub.push(format!("gateway {g}"));
+            }
+            if sub.is_empty() {
+                sub.push("No IPv4 range".into());
+            }
+            let attached = if n.members.is_empty() { "Nothing attached".to_string() } else { format!("{} attached", n.members.len()) };
+            sub.push(attached);
+            let mut facts = Vec::new();
+            if let Some(v6) = &n.ipv6 {
+                facts.push(("IPv6".to_string(), v6.clone()));
+            }
+            let mut actions: Vec<gtk::Widget> = Vec::new();
+            if n.removable {
+                let (h, e, name) = (n.host, n.engine, n.name.clone());
+                actions.push(rescards::remove_button(move || {
+                    window::toast(&format!("Removing {name}…"));
+                    worker::remove_network(h, e, name.clone());
+                }));
+            }
+            Item {
+                group: format!("{} · {}", n.engine.label(), window::host_name(n.host)),
+                engine: n.engine,
+                icon: if n.driver == "physical" || n.driver == "macvlan" { "network-wired-symbolic" } else { "network-workgroup-symbolic" },
+                color: if n.engine == Engine::Docker { "blue" } else { "green" },
+                title: n.name.clone(),
+                tags,
+                sub: sub.join(" · "),
+                chips: n.members.clone(),
+                facts,
+                bar: None,
+                actions,
+            }
+        })
+        .collect();
+    ui.paint(items);
 }
 
 fn open_create() {

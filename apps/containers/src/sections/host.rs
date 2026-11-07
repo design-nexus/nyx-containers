@@ -40,6 +40,11 @@ pub fn host_memory() -> Option<u64> {
     HEALTH.with(|h| h.borrow().iter().find(|x| x.host == HostId::Local).and_then(|x| x.mem_total))
 }
 
+/// A host's Incus storage pools, from its last info.
+pub fn pools(host: HostId) -> Vec<crate::models::PoolInfo> {
+    INFO.with(|i| i.borrow().iter().find(|x| x.host == host).map(|x| x.pools.clone()).unwrap_or_default())
+}
+
 pub fn build_local(page: &Page) {
     build(page, HostId::Local);
 }
@@ -264,6 +269,7 @@ pub fn apply_info(info: HostInfo) {
     for ui in UI.with(|u| u.borrow().clone()) {
         paint_info(&ui);
     }
+    window::repaint();
 }
 
 pub fn refresh(snapshot: &Snapshot) {

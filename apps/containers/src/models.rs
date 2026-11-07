@@ -532,7 +532,7 @@ pub struct Snapshot {
     pub errors: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct NetRow {
     pub host: HostId,
     pub engine: Engine,
@@ -541,6 +541,10 @@ pub struct NetRow {
     pub subnet: Option<String>,
     pub used_by: usize,
     pub removable: bool,
+    pub gateway: Option<String>,
+    pub ipv6: Option<String>,
+    /// Workloads attached to it, by name.
+    pub members: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -900,6 +904,7 @@ mod tests {
                     subnet: None,
                     used_by: 0,
                     removable: true,
+                    ..Default::default()
                 },
                 NetRow {
                     host: HostId::Remote,
@@ -909,6 +914,7 @@ mod tests {
                     subnet: None,
                     used_by: 0,
                     removable: true,
+                    ..Default::default()
                 },
             ],
             ..Snapshot::default()
