@@ -18,6 +18,9 @@ pub async fn run(host: HostId, project: &str, dir: &str, file: &str, action: Act
         Action::Start => &["up", "-d"],
         Action::Stop => &["down"],
         Action::Restart => &["restart"],
+        Action::Pause => &["pause"],
+        Action::Resume => &["unpause"],
+        Action::Kill => &["kill"],
         Action::Delete => return Err("Compose delete is not supported.".into()),
     };
     let output = Command::new("docker")
@@ -33,6 +36,23 @@ pub async fn run(host: HostId, project: &str, dir: &str, file: &str, action: Act
         let out = String::from_utf8_lossy(&output.stdout);
         let msg = if err.trim().is_empty() { out.trim() } else { err.trim() };
         Err(if msg.is_empty() { format!("docker compose failed for {project}") } else { msg.to_string() })
+    }
+}
+
+pub async fn pull(host: HostId, project: &str, dir: &str, file: &str) -> Result<String, String> {
+    if host != HostId::Local {
+        return Err("Compose runs on this computer.".into());
+    }
+    let output = Command::new("docker")
+        .args(["compose", "--project-name", project, "--project-directory", dir, "-f", file, "pull"])
+        .output()
+        .await
+        .map_err(|e| format!("docker compose: {e}"))?;
+    if output.status.success() {
+        Ok(format!("Pulled the images for {project}. Deploy to use them."))
+    } else {
+        let err = String::from_utf8_lossy(&output.stderr);
+        Err(err.trim().lines().last().unwrap_or("docker compose pull failed").to_string())
     }
 }
 

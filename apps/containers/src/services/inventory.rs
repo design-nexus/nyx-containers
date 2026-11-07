@@ -108,6 +108,7 @@ mod tests {
             project: None,
             project_dir: None,
             compose_file: None,
+            ..Default::default()
         });
         snapshot.workloads.push(Workload {
             host: HostId::Local,
@@ -121,6 +122,7 @@ mod tests {
             project: None,
             project_dir: None,
             compose_file: None,
+            ..Default::default()
         });
         snapshot.workloads.sort_by_key(|a| a.name.to_ascii_lowercase());
         assert_eq!(snapshot.workloads[0].name, "alpha");

@@ -1,0 +1,101 @@
+/* Nyx Dark and Nyx Light tokens, copied from nyx-design/mockups/polish/tokens.css (generated from crates/nyx-theme/themes). */
+
+:root, [data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0d0e12;
+  --panel: #121318;
+  --card: #191a21;
+  --raised: #1f2028;
+  --surface: #1d1e26;
+  --popover: #1d1e26;
+  --text: #e7e8ee;
+  --dim-text: #a2a5ba;
+  --text-tertiary: #8a8ea8;
+  --theme-accent: #3d8ae8;
+  --border: #2b2d37;
+  --divider: #1d1e26;
+  --muted: #2b2d37;
+  --danger: #f2655f;
+  --warning: #eeb43f;
+  --success: #59d45b;
+  --shadow: #060609;
+  --hover: 6%;
+  --selection: 16%;
+  --on-accent: #0d0e12;
+  --sw-blue: #3d8ae8;
+  --sw-violet: #8b6cf0;
+  --sw-pink: #c95fc6;
+  --sw-red: #f2655f;
+  --sw-coral: #f5875a;
+  --sw-amber: #eeb43f;
+  --sw-green: #59d45b;
+  --sw-teal: #3cc4c9;
+  --sw-graphite: #9ea2bf;
+  --sec-home: var(--sw-teal);
+  --sec-connections: var(--sw-blue);
+  --sec-hardware: var(--sw-amber);
+  --sec-personalization: var(--sw-violet);
+  --sec-desktop: var(--sw-pink);
+  --sec-input: var(--sw-coral);
+  --sec-accounts: var(--sw-green);
+  --sec-assistant: var(--sw-teal);
+  --sec-system: var(--sw-red);
+  --r-small: 7px;
+  --r-card: 11px;
+  --r-dialog: 15px;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --bg: #ecedf2;
+  --panel: #e5e6ec;
+  --card: #f5f6f9;
+  --raised: #f8f8fb;
+  --surface: #f5f6f9;
+  --popover: #f8f8fb;
+  --text: #171820;
+  --dim-text: #50546c;
+  --text-tertiary: #6a6e90;
+  --theme-accent: #136dcd;
+  --border: #cfd1db;
+  --divider: #dadce4;
+  --muted: #c8cad5;
+  --danger: #cf3434;
+  --warning: #a87012;
+  --success: #2f9a33;
+  --shadow: #b6b8c6;
+  --hover: 5%;
+  --selection: 14%;
+  --on-accent: #ffffff;
+  --sw-blue: #136dcd;
+  --sw-violet: #6a4fd0;
+  --sw-pink: #aa41a8;
+  --sw-red: #cf3434;
+  --sw-coral: #c9532a;
+  --sw-amber: #a87012;
+  --sw-green: #2f9a33;
+  --sw-teal: #14869a;
+  --sw-graphite: #6a6e90;
+  --sec-home: var(--sw-teal);
+  --sec-connections: var(--sw-blue);
+  --sec-hardware: var(--sw-amber);
+  --sec-personalization: var(--sw-violet);
+  --sec-desktop: var(--sw-pink);
+  --sec-input: var(--sw-coral);
+  --sec-accounts: var(--sw-green);
+  --sec-assistant: var(--sw-teal);
+  --sec-system: var(--sw-red);
+  --r-small: 7px;
+  --r-card: 11px;
+  --r-dialog: 15px;
+}
+
+/* Derived, as nyx-theme derives them for GTK. */
+:root, [data-theme] {
+  --accent: var(--app-accent, var(--theme-accent));
+  --nav-active: color-mix(in srgb, var(--accent) var(--selection), var(--bg));
+  --row-hover: color-mix(in srgb, var(--accent) var(--hover), var(--bg));
+  --field: color-mix(in srgb, var(--text) 3.5%, transparent);
+  --track: color-mix(in srgb, var(--text) 10%, transparent);
+  --veil: color-mix(in srgb, color-mix(in srgb, var(--bg) 55%, var(--shadow)) 82%, transparent);
+}

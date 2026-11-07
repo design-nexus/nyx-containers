@@ -64,6 +64,10 @@ pub struct Prefs {
     pub last_section: String,
     pub remote: RemoteProfile,
     pub refresh_seconds: u64,
+    /// Workload keys pinned to the top of the cards.
+    pub pinned: Vec<String>,
+    /// Stacks shown with their services open.
+    pub expanded: Vec<String>,
 }
 
 impl Default for Prefs {
@@ -77,6 +81,8 @@ impl Default for Prefs {
             last_section: "overview".into(),
             remote: RemoteProfile::default(),
             refresh_seconds: 8,
+            pinned: Vec::new(),
+            expanded: Vec::new(),
         }
     }
 }

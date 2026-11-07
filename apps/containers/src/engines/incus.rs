@@ -43,7 +43,15 @@ struct IncusInstance {
     kind: String,
     #[serde(default)]
     config: HashMap<String, String>,
+    #[serde(default)]
+    expanded_config: HashMap<String, String>,
+    #[serde(default)]
+    expanded_devices: HashMap<String, HashMap<String, String>>,
     created_at: Option<String>,
+    last_used_at: Option<String>,
+    state: Option<IncusState>,
+    #[serde(default)]
+    snapshots: Option<Vec<Value>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -76,6 +84,7 @@ struct IncusCpu {
 #[derive(Debug, Deserialize)]
 struct IncusMemory {
     usage: Option<u64>,
+    total: Option<u64>,
     #[serde(rename = "usage_peak")]
     usage_peak: Option<u64>,
 }
@@ -224,7 +233,7 @@ async fn local_socket() -> Result<PathBuf, EngineStatus> {
 async fn list_unix(path: &Path) -> Result<(String, Vec<Workload>), String> {
     let info: Value = unix_call(path, Method::GET, "/1.0", None).await?;
     let instances: Vec<IncusInstance> =
-        unix_call(path, Method::GET, "/1.0/instances?recursion=1", None).await.unwrap_or_default();
+        unix_call(path, Method::GET, "/1.0/instances?recursion=2", None).await.unwrap_or_default();
     Ok((server_detail(&info), map_instances(HostId::Local, instances)))
 }
 
@@ -237,34 +246,132 @@ fn server_detail(info: &Value) -> String {
 }
 
 fn map_instances(host: HostId, instances: Vec<IncusInstance>) -> Vec<Workload> {
-    instances
-        .into_iter()
-        .map(|i| {
-            let kind = if i.kind.contains("virtual") { Kind::VirtualMachine } else { Kind::Container };
-            let image = i.config.get("image.description").cloned().or_else(|| {
-                let os = i.config.get("image.os");
-                let rel = i.config.get("image.release");
-                match (os, rel) {
-                    (Some(o), Some(r)) => Some(format!("{o}/{r}")),
-                    (Some(o), None) => Some(o.clone()),
-                    _ => None,
-                }
-            });
-            Workload {
-                host,
-                engine: Engine::Incus,
-                kind,
-                name: i.name.clone(),
-                id: i.name,
-                state: RunState::from_status(&i.status),
-                status: i.status,
-                image,
-                project: None,
-                project_dir: None,
-                compose_file: None,
-            }
+    instances.into_iter().map(|i| map_instance(host, i)).collect()
+}
+
+fn os_label(config: &HashMap<String, String>) -> Option<String> {
+    let os = config.get("image.os").filter(|s| !s.is_empty());
+    let rel = config.get("image.release").filter(|s| !s.is_empty());
+    match (os, rel) {
+        (Some(o), Some(r)) => Some(format!("{} {r}", capitalize(o))),
+        (Some(o), None) => Some(capitalize(o)),
+        _ => config.get("image.description").cloned().filter(|s| !s.is_empty()),
+    }
+}
+
+fn capitalize(s: &str) -> String {
+    let known = match s.to_ascii_lowercase().as_str() {
+        "nixos" => Some("NixOS"),
+        "ubuntu" => Some("Ubuntu"),
+        "debian" => Some("Debian"),
+        "fedora" => Some("Fedora"),
+        "archlinux" | "arch" => Some("Arch Linux"),
+        "alpine" | "alpinelinux" => Some("Alpine"),
+        "opensuse" => Some("openSUSE"),
+        "rockylinux" => Some("Rocky Linux"),
+        "almalinux" => Some("AlmaLinux"),
+        "centos" => Some("CentOS"),
+        "windows" => Some("Windows"),
+        "kali" => Some("Kali"),
+        "gentoo" => Some("Gentoo"),
+        "voidlinux" => Some("Void Linux"),
+        "omarchy" => Some("Omarchy"),
+        "nyxos" => Some("NyxOS"),
+        _ => None,
+    };
+    if let Some(k) = known {
+        return k.to_string();
+    }
+    let mut c = s.chars();
+    match c.next() {
+        Some(f) if s.chars().all(|ch| ch.is_ascii_lowercase() || !ch.is_alphabetic()) => f.to_uppercase().chain(c).collect(),
+        _ => s.to_string(),
+    }
+}
+
+fn first_ipv4(state: &IncusState) -> Option<String> {
+    let nets = state.network.as_ref()?;
+    let mut names: Vec<&String> = nets.keys().filter(|n| n.as_str() != "lo").collect();
+    names.sort();
+    names.into_iter().find_map(|n| {
+        nets[n].addresses.as_deref().unwrap_or(&[]).iter().find_map(|a| {
+            (a.family.as_deref() == Some("inet") && a.scope.as_deref() == Some("global")).then(|| a.address.clone()).flatten()
         })
-        .collect()
+    })
+}
+
+/// Proxy devices that publish a port: `listen = tcp:0.0.0.0:3389`, `connect = tcp:127.0.0.1:3389`.
+fn proxy_ports(devices: &HashMap<String, HashMap<String, String>>) -> Vec<crate::models::PortMap> {
+    let mut out = Vec::new();
+    for dev in devices.values() {
+        if dev.get("type").map(String::as_str) != Some("proxy") {
+            continue;
+        }
+        let parse = |v: Option<&String>| -> Option<(String, u16)> {
+            let v = v?;
+            let (proto, rest) = v.split_once(':')?;
+            let port = rest.rsplit(':').next()?.split('-').next()?.parse().ok()?;
+            Some((proto.to_string(), port))
+        };
+        if let (Some((proto, host)), Some((_, guest))) = (parse(dev.get("listen")), parse(dev.get("connect"))) {
+            out.push(crate::models::PortMap { host, guest, proto });
+        }
+    }
+    out.sort_by_key(|p| p.host);
+    out
+}
+
+fn map_instance(host: HostId, i: IncusInstance) -> Workload {
+    let kind = if i.kind.contains("virtual") { Kind::VirtualMachine } else { Kind::Container };
+    let cfg = if i.expanded_config.is_empty() { &i.config } else { &i.expanded_config };
+    let image = i.config.get("image.description").cloned().or_else(|| os_label(&i.config));
+    let state = RunState::from_status(&i.status);
+    let started = (state == RunState::Running)
+        .then(|| i.last_used_at.as_deref().and_then(crate::models::parse_rfc3339))
+        .flatten();
+    let mem_total = i.state.as_ref().and_then(|s| s.memory.as_ref()).and_then(|m| m.total).filter(|t| *t > 0);
+    Workload {
+        host,
+        engine: Engine::Incus,
+        kind,
+        name: i.name.clone(),
+        id: i.name.clone(),
+        state,
+        status: i.status.clone(),
+        image,
+        ip: i.state.as_ref().and_then(first_ipv4),
+        ports: proxy_ports(&i.expanded_devices),
+        started,
+        autostart: cfg.get("boot.autostart").is_some_and(|v| v == "true" || v == "1"),
+        cpus: cfg.get("limits.cpu").and_then(|v| crate::models::parse_cpus(v)).or(if kind == Kind::VirtualMachine { Some(1.0) } else { None }),
+        mem_limit: cfg.get("limits.memory").and_then(|v| crate::models::parse_size(v)).or(mem_total),
+        os: os_label(&i.config),
+        snapshots: i.snapshots.as_ref().map(Vec::len).unwrap_or(0),
+        webui: cfg.get("user.nyx.webui").cloned().filter(|s| !s.is_empty()),
+        ..Default::default()
+    }
+}
+
+/// Cumulative CPU nanoseconds and memory for every running instance, for live graphs.
+pub async fn live_usage(host: HostId, remote: &RemoteProfile) -> Result<Vec<(String, u64, Option<u64>, Option<f64>, Option<u64>)>, String> {
+    let conn = connect(host, remote).await?;
+    let instances: Vec<IncusInstance> = call(&conn, Method::GET, "/1.0/instances?recursion=2", None).await?;
+    Ok(instances
+        .into_iter()
+        .filter(|i| RunState::from_status(&i.status) == RunState::Running)
+        .filter_map(|i| {
+            let st = i.state.as_ref()?;
+            let ns = st.cpu.as_ref().and_then(|c| c.usage)?;
+            let cfg = if i.expanded_config.is_empty() { &i.config } else { &i.expanded_config };
+            let cpus = cfg.get("limits.cpu").and_then(|v| crate::models::parse_cpus(v));
+            let mem = st.memory.as_ref().and_then(|m| m.usage);
+            let limit = cfg
+                .get("limits.memory")
+                .and_then(|v| crate::models::parse_size(v))
+                .or(st.memory.as_ref().and_then(|m| m.total).filter(|t| *t > 0));
+            Some((i.name.clone(), ns, mem, cpus, limit))
+        })
+        .collect())
 }
 
 pub async fn probe_remote(profile: &RemoteProfile) -> (EngineStatus, Vec<Workload>) {
@@ -303,7 +410,7 @@ async fn list_https(profile: &RemoteProfile) -> Result<(String, Vec<Workload>), 
     let (client, url, pin) = https_client(profile)?;
     let info: Value = https_call(&client, &url, &pin, Method::GET, "/1.0", None).await?;
     let instances: Vec<IncusInstance> =
-        https_call(&client, &url, &pin, Method::GET, "/1.0/instances?recursion=1", None).await.unwrap_or_else(|_| Vec::new());
+        https_call(&client, &url, &pin, Method::GET, "/1.0/instances?recursion=2", None).await.unwrap_or_else(|_| Vec::new());
     Ok((server_detail(&info), map_instances(HostId::Remote, instances)))
 }
 
@@ -519,18 +626,35 @@ async fn call<T: serde::de::DeserializeOwned>(
 
 pub async fn operate(host: HostId, remote: &RemoteProfile, name: &str, action: Action) -> Result<String, String> {
     let conn = connect(host, remote).await?;
-    let verb = match action {
-        Action::Start => "start",
-        Action::Stop => "stop",
-        Action::Restart => "restart",
+    let path = format!("/1.0/instances/{}/state", enc(name));
+    let (verb, force) = match action {
+        Action::Start => ("start", false),
+        Action::Stop => ("stop", false),
+        Action::Restart => ("restart", false),
+        Action::Pause => ("freeze", false),
+        Action::Resume => ("unfreeze", false),
+        Action::Kill => ("stop", true),
         Action::Delete => {
-            let path = format!("/1.0/instances/{}?force=1", enc(name));
-            let _: Value = call(&conn, Method::DELETE, &path, None).await?;
+            let st: IncusState = call(&conn, Method::GET, &path, None).await?;
+            if st.status.as_deref().map(RunState::from_status) == Some(RunState::Running) {
+                let stop = json!({ "action": "stop", "timeout": 30, "force": true, "stateful": false });
+                let _: Value = call(&conn, Method::PUT, &path, Some(stop)).await?;
+            }
+            let _: Value = call(&conn, Method::DELETE, &format!("/1.0/instances/{}", enc(name)), None).await?;
             return Ok(format!("Deleted {name}"));
         }
     };
-    let body = json!({ "action": verb, "timeout": 30, "force": action == Action::Stop, "stateful": false });
-    let _: Value = call(&conn, Method::PUT, &format!("/1.0/instances/{}/state", enc(name)), Some(body)).await?;
+    let body = json!({ "action": verb, "timeout": 60, "force": force, "stateful": false });
+    let result: Result<Value, String> = call(&conn, Method::PUT, &path, Some(body)).await;
+    if let Err(err) = result {
+        if matches!(action, Action::Stop | Action::Restart) {
+            // The guest ignored the shutdown request: force it, as a power button would.
+            let body = json!({ "action": verb, "timeout": 30, "force": true, "stateful": false });
+            let _: Value = call(&conn, Method::PUT, &path, Some(body)).await.map_err(|_| err)?;
+        } else {
+            return Err(err);
+        }
+    }
     Ok(format!("{} {name}", action.done()))
 }
 
@@ -923,6 +1047,8 @@ async fn collect_logs(conn: &Conn, name: &str) -> Result<String, String> {
     }
     let mut out = String::new();
     for file in files {
+        // Incus lists each log as its API path ("/1.0/instances/web/logs/qemu.log").
+        let file = file.rsplit('/').next().unwrap_or(&file).to_string();
         let body = read_text(conn, &format!("/1.0/instances/{}/logs/{}", enc(name), enc(&file))).await.unwrap_or_default();
         if body.trim().is_empty() {
             continue;

@@ -3,7 +3,7 @@
 
 use crate::models::{Action, CheckId, CreateSpec, Engine, HostId, NetSpec, SnapAction, TermEvent, TermKind, VolumeSpec};
 use crate::prefs::RemoteProfile;
-use crate::services::{compose, connections, diagnose, host, inventory, ops};
+use crate::services::{compose, connections, diagnose, host, inventory, live, ops};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use tokio::sync::{mpsc, watch};
@@ -21,6 +21,7 @@ pub enum Job {
     FollowLogs { host: HostId, engine: Engine, names: Vec<String>, seq: u64, follow: bool },
     StackOp { host: HostId, names: Vec<String>, action: Action },
     Compose { host: HostId, project: String, dir: String, file: String, action: Action },
+    ComposePull { host: HostId, project: String, dir: String, file: String },
     StopLogs { seq: u64 },
     StartTerm { host: HostId, engine: Engine, name: String, seq: u64, kind: TermKind },
     TermInput { seq: u64, data: Vec<u8> },
@@ -60,6 +61,9 @@ pub fn start() {
             tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             let mut health = tokio::time::interval(std::time::Duration::from_secs(2));
             health.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            let mut live_sampler = live::Sampler::default();
+            let mut live_tick = tokio::time::interval(std::time::Duration::from_secs(3));
+            live_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             loop {
                 tokio::select! {
                     job = rx.recv() => {
@@ -80,6 +84,10 @@ pub fn start() {
                             Some(Job::StackOp { host, names, action }) => stack_now(host, names, action).await,
                             Some(Job::Compose { host, project, dir, file, action }) => {
                                 compose_now(host, project, dir, file, action).await
+                            }
+                            Some(Job::ComposePull { host, project, dir, file }) => {
+                                let result = compose::pull(host, &project, &dir, &file).await;
+                                on_main(move || crate::window::apply_op(result));
                             }
                             Some(Job::StopLogs { seq }) => stop_watch(&live, seq, true),
                             Some(Job::StartTerm { host, engine, name, seq, kind }) => {
@@ -105,6 +113,10 @@ pub fn start() {
                         }
                     }
                     _ = tick.tick() => refresh_now().await,
+                    _ = live_tick.tick() => {
+                        let samples = live_sampler.sample(&current_remote()).await;
+                        on_main(move || crate::window::apply_live(samples));
+                    }
                     _ = health.tick() => {
                         sample_now(&mut sampler).await;
                         let next = refresh_seconds();
@@ -173,6 +185,10 @@ pub fn stack_op(host: HostId, names: Vec<String>, action: Action) {
 
 pub fn compose(host: HostId, project: impl Into<String>, dir: impl Into<String>, file: impl Into<String>, action: Action) {
     send(Job::Compose { host, project: project.into(), dir: dir.into(), file: file.into(), action });
+}
+
+pub fn compose_pull(host: HostId, project: impl Into<String>, dir: impl Into<String>, file: impl Into<String>) {
+    send(Job::ComposePull { host, project: project.into(), dir: dir.into(), file: file.into() });
 }
 
 pub fn stop_logs(seq: u64) {

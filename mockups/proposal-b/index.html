@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Nyx Containers: proposal B</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="mock.css">
+<script src="mock.js"></script>
+</head>
+<body>
+<div id="app"></div>
+<script>
+// ---------- Workload cards ----------
+function met(label, val, sp) {
+  return `<div class="met"><div class="top"><span class="lbl">${label}</span><span class="v">${val}</span></div>${sp}</div>`;
+}
+function wl(w) {
+  const tags = (w.tags || []).join('');
+  const star = w.star ? ic('star', 'star') : '';
+  const who = `<div class="who"><span class="tile">${ic(w.icon)}<span class="dot ${w.state}"></span></span>
+    <div style="min-width:0"><div class="name"><b>${w.name}</b>${star}${tags}</div>
+    <div class="sub"><span class="kind">${w.kind}</span><span class="sep-dot">·</span>${w.sub}${w.ipInline ? `<span class="ip-inline"><span class="sep-dot">·</span>${w.ipInline}</span>` : ''}</div></div></div>`;
+  const info = `<div class="info"><div class="l1">${w.l1}</div><div class="l2">${w.l2}</div></div>`;
+  const mid = w.idle
+    ? `<div class="idle-note">${w.idle}</div>`
+    : met('CPU', w.cpu[2], spark(w.cpu[0], w.cpu[1], { vol: 0.26 })) + met('MEM', w.mem[2], spark(w.mem[0], w.mem[1], { vol: 0.05, cap: w.mem[3] }));
+  return `<div class="wl ${w.state === 'off' ? 'off' : ''} ${w.hover ? 'hover' : ''}" ${w.style ? `style="${w.style}"` : ''}>${who}${info}${mid}<div class="acts">${w.acts}</div>${w.extra || ''}</div>`;
+}
+function svc(s) {
+  return `<div class="svc"><div class="who"><span class="dot ${s.state || 'run'}" style="box-shadow:none;width:7px;height:7px"></span><b>${s.name}</b><span class="dim ell mono" style="font-size:11px">${s.image}</span></div>
+    <div class="info flex g6">${s.port || '<span class="ter">no ports</span>'}</div>
+    <div class="mini"><span class="ter" style="font-size:10.5px;font-weight:600;letter-spacing:.06em">CPU</span><span class="bar"><b style="width:${s.cpu[0]}%"></b></span><span>${s.cpu[1]}</span></div>
+    <div class="mini"><span class="ter" style="font-size:10.5px;font-weight:600;letter-spacing:.06em">MEM</span><span class="bar"><b style="width:${s.mem[0]}%"></b></span><span>${s.mem[1]}</span></div>
+    <div class="acts">${ib('logs', 'opt-wide')}${ib('terminal', 'opt-wide')}${ib('restart')}${ib('more')}</div></div>`;
+}
+const port = (p, link) => `<span class="port ${link ? 'link' : ''}">${p}${link ? ic('ext') : ''}</span>`;
+
+function overviewBody() {
+  const strip = `<div class="card hoststrip">
+    <div class="hm"><div class="top"><span class="lbl">CPU</span><span class="val">23% <small>of 12 cores</small></span></div>${spark(11, 0.28, { vol: 0.3, h: 24 })}</div>
+    <div class="hm"><div class="top"><span class="lbl">Memory</span><span class="val">19.5 <small class="keep">/ 32 GB</small></span></div>${spark(12, 0.6, { vol: 0.06, h: 24 })}</div>
+    <div class="hm"><div class="top"><span class="lbl">Disk</span><span class="val">212 GB <small>free</small></span></div>${spark(13, 0.22, { vol: 0.3, h: 24 })}</div>
+    <div class="hm"><div class="top"><span class="lbl">Network</span><span class="val">2.1 MB/s <small>in</small></span></div>${spark(14, 0.35, { vol: 0.35, h: 24 })}</div>
+    <div class="engines"><span class="flex"><span class="dot run" style="box-shadow:none"></span>Docker 27.5</span><span class="flex"><span class="dot run" style="box-shadow:none"></span>Incus 6.9</span></div>
+  </div>`;
+
+  const tools = `<div class="flex g6 ov-tools" style="margin:14px 0 2px">
+    <span class="chip on">All <em>9</em></span><span class="chip">VMs <em>2</em></span><span class="chip">LXC <em>2</em></span>
+    <span class="chip">Docker <em>7</em></span><span class="chip hide-narrow">Running <em>7</em></span>
+    <span class="grow"></span>
+    <span class="dd sm hide-narrow"><span class="lbl">Group</span><span>Type</span>${ic('chev')}</span>
+    <span class="dd sm"><span class="lbl">Sort</span><span>Pinned</span>${ic('chev')}</span>
+    <span class="seg sm icons"><span class="on">${ic('rows')}</span><span>${ic('list')}</span></span>
+  </div>`;
+
+  const vms = [
+    wl({ icon: 'vm', kind: 'VM', name: 'win11-dev', star: true, state: 'run', sub: 'Windows 11 Pro · 4 vCPU · 8 GB', ipInline: '10.10.0.12',
+      tags: ['<span class="tag acc">3D</span>'],
+      l1: '<span class="ip">10.10.0.12</span>' + port('RDP 3389'), l2: 'Up 1d 2h · 2 snapshots',
+      cpu: [21, 0.2, '18%'], mem: [22, 0.62, '5.1 <small>/ 8 GB</small>', 0.92],
+      acts: ib('vm') + ib('snapshot', 'opt-wide') + ib('logs', 'opt-wide') + power() + ib('more') }),
+    wl({ icon: 'vm', kind: 'VM', name: 'nyxos-dev', state: 'run', sub: 'NixOS 25.05 · 6 vCPU · 12 GB', ipInline: '10.10.0.31',
+      tags: ['<span class="tag acc">3D</span>'],
+      l1: '<span class="ip">10.10.0.31</span>' + port('SSH 22'), l2: 'Up 3h 12m · autostart',
+      cpu: [31, 0.48, '41%'], mem: [32, 0.66, '7.9 <small>/ 12 GB</small>', 0.92],
+      acts: ib('vm') + ib('terminal', 'opt-wide') + ib('logs', 'opt-wide') + power() + ib('more') }),
+  ].join('');
+
+  const lxcs = [
+    wl({ icon: 'lxc', kind: 'LXC', name: 'dev-box', star: true, state: 'run', sub: 'Ubuntu 24.04 · 4 CPU · 4 GB', ipInline: '10.10.0.21',
+      l1: '<span class="ip">10.10.0.21</span>' + port(':3000', true) + '<span class="port">+1</span>', l2: 'Up 5h 12m · ~/Projects shared',
+      cpu: [41, 0.1, '9%'], mem: [42, 0.3, '1.2 <small>/ 4 GB</small>', 0.92],
+      acts: ib('globe') + ib('terminal', 'opt-wide') + ib('logs', 'opt-wide') + power() + ib('more') }),
+    wl({ icon: 'lxc', kind: 'LXC', name: 'postgres-16', state: 'off', sub: 'Debian 12 · 2 CPU · 2 GB', ipInline: 'stopped',
+      l1: '<span class="ter">No address</span>', l2: '3 snapshots · autostart off',
+      idle: 'Stopped 2 h ago', acts: ib('play', 'start') + ib('more') }),
+  ].join('');
+
+  const tip = `<div class="tip" style="right:96px;top:52px">Open web UI · localhost:32400<span class="key">W</span></div>`;
+  const stack = `<div class="wl-stack">
+    ${wl({ icon: 'stack', kind: 'STACK', name: 'paperless', state: 'run', sub: '4 services · ~/stacks/paperless', ipInline: ':8000',
+      tags: ['<span class="tag">' + ic('git').replace('data-i', 'data-i style="width:11px;height:11px;vertical-align:-1px;margin-right:3px"') + 'main</span>'],
+      l1: port(':8000', true), l2: '4 of 4 running · up 2d 9h',
+      cpu: [51, 0.08, '6%'], mem: [52, 0.3, '1.0 <small>GB</small>'],
+      acts: ib('globe') + ib('logs', 'opt-wide') + ib('rocket', 'opt-wide') + power() + ib('chevu') })}
+    ${svc({ name: 'webserver', image: 'paperless-ngx:2.13.5', port: port(':8000', true), cpu: [9, '4.1%'], mem: [30, '612 MB'] })}
+    ${svc({ name: 'db', image: 'postgres:16', cpu: [3, '1.0%'], mem: [10, '148 MB'] })}
+    ${svc({ name: 'broker', image: 'redis:7', cpu: [1, '0.3%'], mem: [2, '12 MB'] })}
+    ${svc({ name: 'gotenberg', image: 'gotenberg:8', cpu: [2, '0.8%'], mem: [14, '210 MB'] })}
+  </div>`;
+
+  const docker = [
+    wl({ icon: 'docker', kind: 'DOCKER', name: 'plex', state: 'run', hover: true, sub: 'linuxserver/plex:latest', ipInline: ':32400',
+      tags: ['<span class="tag warn">Update</span>'],
+      l1: port(':32400', true) + '<span class="ter">host network</span>', l2: 'Up 3d 4h · healthy',
+      cpu: [61, 0.16, '12%'], mem: [62, 0.35, '1.4 <small>/ 4 GB</small>', 0.92],
+      acts: ib('globe', 'hover') + ib('logs', 'opt-wide') + ib('terminal', 'opt-wide') + power() + ib('more'), extra: tip }),
+    wl({ icon: 'docker', kind: 'DOCKER', name: 'open-webui', state: 'err', sub: 'ghcr.io/open-webui/open-webui:main', ipInline: 'exited (1)',
+      tags: ['<span class="tag bad">Exited (1)</span>'],
+      l1: port(':3001'), l2: 'Restarted 3 times · 12 min ago',
+      idle: '<span style="color:var(--danger)">Exited with code 1</span> · ollama not reachable at :11434',
+      acts: ib('logs') + ib('restart') + ib('more') }),
+    stack,
+  ].join('');
+
+  return `<div class="view pad">${strip}${tools}
+    <div class="gtitle">Virtual machines <em>2</em></div><div class="wl-list">${vms}</div>
+    <div class="gtitle">Linux containers <em>2</em></div><div class="wl-list">${lxcs}</div>
+    <div class="gtitle">Docker <em>7</em></div><div class="wl-list">${docker}</div>
+  </div>`;
+}
+
+// ---------- Workload tabs ----------
+const subnav = (items, active) => `<span class="seg">${items.map((t) => `<span class="${t === active ? 'on' : ''}">${t}</span>`).join('')}</span>`;
+const VM_NAV = ['Summary', 'Display', 'Hardware', 'Snapshots', 'Backups', 'Logs', 'Options'];
+const LXC_NAV = ['Summary', 'Terminal', 'Hardware', 'Snapshots', 'Backups', 'Logs', 'Options'];
+const DOCKER_NAV = ['Summary', 'Logs', 'Terminal', 'Inspect', 'Env', 'Mounts', 'Network'];
+const STACK_NAV = ['Services', 'Compose', '.env', 'Logs'];
+
+function guest() {
+  const ti = (bg) => `<span class="ti" style="background:${bg}"></span>`;
+  const bar = (w, c) => `<span style="width:${w}%;background:${c}"></span>`;
+  const code = [[38, '#c586c0'], [62, '#9cdcfe'], [48, '#ce9178'], [0, ''], [30, '#c586c0'], [72, '#dcdcaa'], [56, '#9cdcfe'], [44, '#ce9178'], [66, '#6a9955'], [0, ''], [52, '#4ec9b0'], [34, '#9cdcfe'], [58, '#dcdcaa']]
+    .map(([w, c]) => w ? bar(w, c) : '<span style="height:.9vh"></span>').join('');
+  const tree = [60, 72, 48, 80, 54, 66, 40].map((w, k) => bar(w, k === 3 ? '#e8e8e8' : '#8a8a8a')).join('');
+  return `<div class="w11"><div class="bloom"></div>
+    <div class="icons"><span style="background:linear-gradient(135deg,#7fb4ff,#2f6fd6)"></span><span style="background:linear-gradient(135deg,#ffd76a,#e6a822)"></span><span style="background:linear-gradient(135deg,#50e3c2,#1e8bd8)"></span></div>
+    <div class="gwin"><div class="tbar"><span style="width:1.4vh;height:1.4vh;border-radius:3px;background:#2f8ae8;display:block"></span><span>main.rs · nyx-music · Visual Studio Code</span><span class="w"><span></span><span></span><span></span></span></div>
+      <div class="body"><div class="act"></div><div class="tree">${tree}</div><div style="flex:1;display:flex;flex-direction:column"><div class="gcode">${code}</div>
+      <div class="term">PS C:\\Users\\ken\\nyx-music&gt; cargo build --release<br>&nbsp;&nbsp;&nbsp;Compiling nyx-music v0.9.2<br>&nbsp;&nbsp;&nbsp;&nbsp;Finished release in 52.10s</div></div></div></div>
+    <div class="taskbar">${ti('linear-gradient(135deg,#4cc2ff,#0067c0)')}${ti('rgba(255,255,255,.22)')}${ti('linear-gradient(135deg,#ffd76a,#e6a822)')}${ti('linear-gradient(135deg,#50e3c2,#1e8bd8)')}${ti('linear-gradient(135deg,#3aa0f3,#1565c0)')}${ti('#2b2b2b')}
+      <span class="tray"><span></span><span></span><span></span></span><span class="clock">10:12 PM<br>11/6/2026</span></div></div>`;
+}
+
+function vmDisplay() {
+  const tb = `<div class="tb">${subnav(VM_NAV, 'Display')}<span class="grow"></span>
+    <span class="seg sm icons"><span class="on">${ic('fit')}</span><span>${ic('actual')}</span></span>
+    ${ib('resize', 'on')}<span class="split"><span class="ib">${ic('keyboard')}</span><span class="ib">${ic('chev')}</span></span>
+    ${ib('clipboard', 'on')}${ib('usb', '', '1')}${ib('folder')}${ib('speaker', 'on')}${ib('camera')}${ib('expand')}
+    <span class="div"></span>${ib('pause')}${ib('restart')}${power()}</div>`;
+  const body = `${tb}<div class="display-wrap"><div class="display-area"><div class="screen">${guest()}</div></div>
+    <div class="display-cap"><span class="dot run" style="box-shadow:none;width:7px;height:7px"></span><b>Running</b><span class="sep-dot">·</span><span class="ip" style="color:var(--dim-text)">10.10.0.12</span><span class="sep-dot">·</span>1920 × 1200<span class="sep-dot">·</span>SPICE, virtio-gpu 3D<span class="sep-dot">·</span>Guest agent connected<span class="sep-dot">·</span>Clipboard synced
+    <span class="grow"></span>Click the screen to capture keyboard and mouse<span class="key">Ctrl</span><span class="key">Alt</span>releases</div></div>`;
+  return frame({ sub: 'win11-dev', nav: 'vms', tabs: TABS('win11'), body, rail: true });
+}
+
+function vmHardware() {
+  const r = (icon, n, val, sel) => `<div class="r ${sel ? 'sel' : ''}">${ic(icon)}<span class="n">${n}</span><span class="val">${val}</span>${sel ? ic('chevr') : '<span></span>'}</div>`;
+  const list = `<div class="card hw" style="width:440px;flex:none;overflow:hidden">
+    <div class="sec">Compute</div>
+    ${r('cpu', 'Processors', '4 cores · host model · pinned 2–5', true)}
+    ${r('memory', 'Memory', '8 GB · balloon off')}
+    ${r('vm', 'Display', 'virtio-gpu 3D · 1920 × 1200 · SPICE')}
+    <div class="sec">Storage</div>
+    ${r('disk', 'Root disk', '64 GB · default (btrfs) · virtio-scsi')}
+    ${r('storage', 'win-data', '200 GB volume · D:')}
+    ${r('disc', 'CD/DVD', 'virtio-win-0.1.266.iso')}
+    <div class="sec">Network and sharing</div>
+    ${r('nic', 'eth0', 'incusbr0 · 10.10.0.12 · 00:16:3e:2a:91:0c')}
+    ${r('forward', 'Port forward', 'localhost:3389 → 3389 (RDP)')}
+    ${r('folder', 'Shared folder', '~/Projects → P:  (virtiofs)')}
+    <div class="sec">Devices and firmware</div>
+    ${r('usb', 'USB', 'Logitech Unifying Receiver · auto-attach')}
+    ${r('gpu', 'GPU', 'No passthrough · IOMMU ready')}
+    ${r('shield', 'Firmware', 'UEFI · Secure Boot · vTPM 2.0')}
+  </div>`;
+  const cores = Array.from({ length: 12 }, (_, k) => `<span class="core ${k >= 2 && k <= 5 ? 'on' : ''}">${k}</span>`).join('');
+  const edit = `<div class="card grow" style="display:flex;flex-direction:column;overflow:hidden">
+    <div class="card-h" style="padding:14px 16px 6px">${ic('cpu')}<span class="t">Processors</span><span class="tag warn">Applies on restart</span><span class="end">${ib('code', 'sm')}</span></div>
+    <div style="padding:0 2px">
+      <div class="opt"><div class="grow"><div>Cores</div><div class="d">This computer has 12.</div></div><span class="stepper">${ib('minus')}<span>4</span>${ib('plus')}</span></div>
+      <div class="opt"><div style="width:180px;flex:none"><div>CPU limit</div><div class="d">Most it can use of its cores.</div></div><div class="slider"><div class="tr"><div class="fill" style="width:75%"></div></div><div class="kn" style="left:75%"></div></div><span class="tnum dim" style="width:40px;text-align:right">75%</span></div>
+      <div class="opt" style="align-items:flex-start;padding-top:12px;padding-bottom:12px"><div style="width:180px;flex:none"><div>Pin to cores</div><div class="d">Keep it on these host cores.</div></div><div class="grow"><div class="cores" style="grid-template-columns:repeat(6,1fr)">${cores}</div></div></div>
+      <div class="opt"><div class="grow"><div>Topology</div><div class="d">How the guest sees its cores.</div></div><span class="dd">1 socket · 4 cores · 1 thread${ic('chev')}</span></div>
+      <div class="opt"><div class="grow"><div>Hot-add cores</div><div class="d">Add cores while it runs (Linux guests).</div></div><span class="switch"></span></div>
+      <div class="opt"><div class="grow"><div>CPU model</div><div class="d">Host passes every CPU feature to the guest.</div></div><span class="dd">host (passthrough)${ic('chev')}</span></div>
+      <div class="opt"><div class="grow"><div>Priority</div><div class="d">Who wins when the host is busy.</div></div><span class="seg sm"><span>Low</span><span class="on">Normal</span><span>High</span></span></div>
+      <div class="opt"><div class="grow"><div>Nested virtualization</div><div class="d">Run VMs or Docker inside this VM.</div></div><span class="switch on"></span></div>
+    </div>
+    <span class="grow"></span>
+    <div class="flex g8" style="padding:12px 16px 14px;justify-content:flex-end"><span class="ter" style="margin-right:auto;font-size:12px">2 changes · win11-dev restarts to apply them</span><span class="btn">Revert</span><span class="btn primary">Apply</span></div>
+  </div>`;
+  const tb = `<div class="tb">${subnav(VM_NAV, 'Hardware')}<span class="grow"></span>
+    <span class="btn sm">${ic('plus')}Add device${ic('chev')}</span>${ib('code')}<span class="div"></span>${ib('vm')}${ib('restart')}${power()}</div>`;
+  const body = `${tb}<div class="split-h">${list}${edit}</div>`;
+  return frame({ sub: 'win11-dev', nav: 'vms', tabs: TABS('win11'), body });
+}
+
+function vmFullscreen() {
+  const bar = `<div class="fs-bar">${ic('grip', 'grip')}<span class="who"><span class="dot run" style="box-shadow:none;width:7px;height:7px"></span>win11-dev</span><span class="div"></span>
+    <span class="seg sm icons"><span class="on">${ic('fit')}</span><span>${ic('actual')}</span></span>
+    <span class="split"><span class="ib sm">${ic('keyboard')}</span><span class="ib sm">${ic('chev')}</span></span>${ib('clipboard', 'sm on')}${ib('usb', 'sm')}${ib('camera', 'sm')}<span class="div"></span>${ib('pin', 'sm on')}${ib('shrink', 'sm')}${ib('power', 'sm')}</div>`;
+  const hint = `<div class="fs-hint">${ic('keyboard')}Keyboard captured<span class="key">Ctrl</span><span class="key">Alt</span>releases<span class="sep-dot">·</span><span class="key">Ctrl</span><span class="key">Alt</span><span class="key">Enter</span>leaves fullscreen</div>`;
+  const body = `<div class="display-area" style="border-radius:0;background:#000">${bar}<div class="screen">${guest()}</div>${hint}</div>`;
+  return frame({ sub: 'win11-dev', nav: 'vms', tabs: TABS('win11'), body, full: true });
+}
+
+function lxcTerminal() {
+  const tb = `<div class="tb">${subnav(LXC_NAV, 'Terminal')}<span class="grow"></span>
+    <span class="dd sm">${ic('user')}<span>ken</span>${ic('chev')}</span>${ib('split')}${ib('search')}${ib('clipboard')}${ib('ext')}
+    <span class="div"></span>${ib('snapshot')}${ib('restart')}${power()}</div>`;
+  const P = '<span class="p">ken@dev-box</span> <span class="h">~/Projects/nyx-music</span> <span class="v">(main)</span> $ ';
+  const term = `<div class="term">${P}cargo build --release
+<span class="t">   Compiling</span> nyx-ui v0.4.0 (https://github.com/design-nexus/nyx-design.git#b723d55)
+<span class="t">   Compiling</span> nyx-music v0.9.2 (/home/ken/Projects/nyx-music)
+<span class="t">    Finished</span> \`release\` profile [optimized] target(s) in 41.82s
+${P}pnpm --dir web dev --host
+<span class="m">  VITE v6.0.7  ready in 412 ms</span>
+
+  <span class="t">➜</span>  Local:   http://localhost:5173/
+  <span class="t">➜</span>  Network: http://10.10.0.21:5173/
+<span class="y">  ! </span>Port 5173 forwarded to this computer as <span class="h">localhost:5173</span>
+${P}<span class="cur"> </span></div>`;
+  const sessions = `<div class="sessions"><span class="chip on">${ic('terminal')}zsh · nyx-music</span><span class="chip">${ic('terminal')}cargo watch</span><span class="ib sm">${ic('plus')}</span>
+    <span class="grow"></span><span class="ter" style="font-size:11.5px">Paste with <span class="key">Ctrl</span> <span class="key">Shift</span> <span class="key">V</span>, <span class="key">Shift</span> <span class="key">Insert</span> or middle-click</span></div>`;
+  const drawer = `<div class="drawer">
+    <div class="card"><div class="card-h">${ic('globe')}<span class="t">Ports</span><span class="end">${ib('plus', 'sm')}</span></div>
+      <div style="padding:4px 4px 8px">
+        <div class="opt" style="min-height:38px;padding:4px 10px"><span class="port link">:3000${ic('ext')}</span><span class="grow dim" style="font-size:12px">node · dev server</span>${ib('copy', 'sm')}</div>
+        <div class="opt" style="min-height:38px;padding:4px 10px"><span class="port link">:5173${ic('ext')}</span><span class="grow dim" style="font-size:12px">vite · forwarded</span>${ib('copy', 'sm')}</div>
+      </div></div>
+    <div class="card"><div class="card-h">${ic('folder')}<span class="t">Shared folders</span><span class="end">${ib('plus', 'sm')}</span></div>
+      <div class="kv"><span>Host</span><span class="mono">~/Projects</span><span>Guest</span><span class="mono">/home/ken/Projects</span><span>Mode</span><span>Read and write</span></div></div>
+    <div class="card"><div class="card-h">${ic('link')}<span class="t">Connect</span></div>
+      <div style="padding:6px 14px 14px;display:flex;flex-direction:column;gap:8px">
+        <div class="field" style="height:30px"><span class="mono grow ell">ssh ken@10.10.0.21</span>${ic('copy')}</div>
+        <span class="btn sm" style="justify-content:center">${ic('code')}Open folder in editor over SSH</span>
+        <div class="flex g8"><span class="btn sm grow" style="justify-content:center">${ic('upload')}Push file</span><span class="btn sm grow" style="justify-content:center">${ic('download')}Pull file</span></div>
+      </div></div>
+  </div>`;
+  const body = `${tb}<div class="split-h"><div class="term-wrap" style="padding:0;flex:1;min-width:0">${sessions}${term}</div>${drawer}</div>`;
+  return frame({ sub: 'dev-box', nav: 'lxc', tabs: TABS('devbox'), body });
+}
+
+function dockerLogs() {
+  const L = (ts, lv, msg, hit) => `<div class="lg ${hit ? 'hit' : ''}"><span class="ts">${ts}</span><span class="lv ${lv[0].toLowerCase()}">${lv}</span><span class="msg">${msg}</span></div>`;
+  const m = (s) => s.replace('transcode', '<mark>transcode</mark>');
+  const lines = [
+    ['22:04:11.204', 'INFO', 'Plex Media Server v1.41.3.9314 starting'],
+    ['22:04:11.880', 'INFO', 'Library scan: Movies (1,284 items), TV Shows (312 series)'],
+    ['22:04:12.017', 'DEBUG', 'Relay: connected to relay.plex.tv:443'],
+    ['22:05:40.551', 'INFO', 'Session 3f2a: "Dune: Part Two" direct play → Living Room TV'],
+    ['22:07:02.390', 'INFO', 'Session 81c0: transcode 4K HEVC → 1080p H.264 (hardware, Intel QSV)', 1],
+    ['22:07:02.402', 'DEBUG', 'transcode: /config/Library/Application Support/Plex/Cache/Transcode/Sessions/81c0', 1],
+    ['22:07:15.118', 'WARN', 'transcode throttled: buffer 18 s ahead, client bandwidth 6.2 Mbps', 1],
+    ['22:08:33.004', 'INFO', 'Scheduled task: refresh metadata for 4 items'],
+    ['22:09:47.661', 'WARN', 'Database: slow query 1,204 ms (metadata_items)'],
+    ['22:10:02.815', 'INFO', 'Session 81c0: transcode stopped, 7m 0s, 512 MB', 1],
+    ['22:10:58.320', 'ERROR', 'Could not reach update server plex.tv: timeout after 10 s'],
+    ['22:11:00.004', 'INFO', 'Retrying update check in 5 min'],
+    ['22:11:21.770', 'INFO', 'Session 3f2a: paused at 1:12:04'],
+    ['22:12:09.441', 'DEBUG', 'Butler: optimize database complete'],
+    ['22:12:30.018', 'INFO', 'Health check: OK (34 ms)'],
+    ['22:12:44.902', 'INFO', 'Session 3f2a: resumed'],
+  ].map(([t, l, s, h]) => L(t, l, h ? m(s) : s, h)).join('');
+  const tb = `<div class="tb">${subnav(DOCKER_NAV, 'Logs')}<span class="grow"></span>${ib('globe')}${ib('terminal')}<span class="div"></span>${ib('restart')}${power()}${ib('more')}</div>`;
+  const ltools = `<div class="flex g8" style="padding:10px 10px 6px 12px"><div class="field focus" style="width:260px">${ic('search')}<span>transcode</span><span class="grow"></span><span class="ter" style="font-size:11.5px">4 of 9</span></div>
+    <span class="seg sm"><span class="on">All</span><span>Warnings</span><span>Errors</span></span><span class="grow"></span>
+    ${ib('clock', 'sm on')}${ib('wrap', 'sm')}${ib('follow', 'sm on')}${ib('download', 'sm')}</div>`;
+  const drawer = `<div class="drawer">
+    <div class="card" style="box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--warning) 28%,transparent)"><div class="card-h">${ic('download')}<span class="t">Update available</span></div>
+      <div style="padding:2px 14px 14px;display:flex;flex-direction:column;gap:10px"><div class="dim" style="font-size:12.5px">linuxserver/plex <span class="mono" style="color:var(--text)">1.41.3</span> → <span class="mono" style="color:var(--text)">1.41.4</span>, pushed 2 days ago.</div>
+      <div class="flex g8"><span class="btn sm primary">Recreate with new image</span><span class="btn sm flat dim">Skip</span></div></div></div>
+    <div class="card"><div class="card-h">${ic('info')}<span class="t">Container</span></div>
+      <div class="kv" style="grid-template-columns:70px minmax(0,1fr)"><span>Status</span><span><span class="dot run" style="box-shadow:none;width:7px;height:7px;margin-right:6px"></span>Healthy · up 3d 4h</span>
+        <span>Image</span><span class="mono">linuxserver/plex:latest</span><span>Ports</span><span><span class="port link">:32400${ic('ext')}</span></span>
+        <span>Network</span><span>host</span><span>Restart</span><span>Unless stopped</span><span>GPU</span><span>/dev/dri (Intel QSV)</span><span>Created</span><span>Oct 28, from compose</span></div></div>
+    <div class="card"><div class="card-h">${ic('folder')}<span class="t">Mounts</span></div>
+      <div class="kv" style="grid-template-columns:76px minmax(0,1fr)"><span>/config</span><span class="mono">~/docker/plex/config</span><span>/media</span><span class="mono">/mnt/media <span class="tag" style="margin-left:4px">Read-only</span></span><span>/transcode</span><span class="mono">tmpfs · 4 GB</span></div></div>
+  </div>`;
+  const body = `${tb}<div class="split-h"><div class="card" style="flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden">${ltools}<div class="logs">${lines}</div></div>${drawer}</div>`;
+  return frame({ sub: 'plex', nav: 'docker', tabs: TABS('plex'), body });
+}
+
+function stackCompose() {
+  const src = [
+    ['<span class="k">name</span>: <span class="s">paperless</span>'],
+    ['<span class="k">services</span>:'],
+    ['  <span class="k">broker</span>:'],
+    ['    <span class="k">image</span>: <span class="s">docker.io/library/redis:7</span>'],
+    ['    <span class="k">restart</span>: <span class="c">unless-stopped</span>'],
+    ['    <span class="k">volumes</span>: [<span class="s">redisdata:/data</span>]'],
+    [''],
+    ['  <span class="k">db</span>:'],
+    ['    <span class="k">image</span>: <span class="s">docker.io/library/postgres:16</span>'],
+    ['    <span class="k">restart</span>: <span class="c">unless-stopped</span>'],
+    ['    <span class="k">volumes</span>: [<span class="s">pgdata:/var/lib/postgresql/data</span>]'],
+    ['    <span class="k">environment</span>:'],
+    ['      <span class="t">POSTGRES_DB</span>: <span class="s">paperless</span>'],
+    ['      <span class="t">POSTGRES_PASSWORD</span>: <span class="c">${DB_PASSWORD}</span>'],
+    [''],
+    ['  <span class="k">webserver</span>:'],
+    ['    <span class="k">image</span>: <span class="s">ghcr.io/paperless-ngx/paperless-ngx:2.14.0</span>', 1],
+    ['    <span class="k">depends_on</span>: [<span class="s">db</span>, <span class="s">broker</span>, <span class="s">gotenberg</span>]'],
+    ['    <span class="k">ports</span>: [<span class="s">"8000:8000"</span>]'],
+    ['    <span class="k">environment</span>:'],
+    ['      <span class="t">PAPERLESS_REDIS</span>: <span class="s">redis://broker:6379</span>'],
+    ['      <span class="t">PAPERLESS_OCR_LANGUAGE</span>: <span class="s">eng+deu</span>', 1],
+    ['    <span class="k">labels</span>:'],
+    ['      <span class="t">nyx.webui</span>: <span class="s">http://localhost:8000</span>  <span class="cm"># the card\'s Web UI button</span>'],
+    [''],
+    ['  <span class="k">gotenberg</span>:'],
+    ['    <span class="k">image</span>: <span class="s">docker.io/gotenberg/gotenberg:8</span>'],
+  ];
+  const lns = src.map((_, k) => k + 1).join('\n');
+  const code = src.map(([l, chg]) => chg ? `<span class="chg">${l}</span>` : l).join('\n');
+  const tb = `<div class="tb">${subnav(STACK_NAV, 'Compose')}
+    <span class="grow"></span><span class="btn sm">${ic('check')}Validate</span><span class="btn sm">${ic('download')}Pull</span><span class="btn sm primary">${ic('rocket')}Deploy</span><span class="div"></span>${ib('globe')}${ib('restart')}${power()}${ib('more')}</div>`;
+  const editor = `<div class="card editor"><div class="ed-tabs" style="align-items:center"><span class="tab active" style="padding-right:9px">${ic('code')}compose.yaml<span class="tag acc" style="margin-left:2px">2</span></span><span class="tab" style="padding-right:9px">${ic('sliders')}.env</span><span class="grow"></span>
+    <span class="chip" style="height:26px;font-size:12px">${ic('git')}github.com/ken/homelab<span class="ter">· stacks/paperless · main</span></span><span class="tag ok">Auto-update</span>${ib('copy', 'sm')}</div>
+    <div class="code"><div class="ln">${lns}</div><div class="src">${code}</div></div></div>`;
+  const s = (name, img, st, prt) => `<div class="opt" style="min-height:40px;padding:6px 14px"><span class="dot ${st}" style="box-shadow:none;width:7px;height:7px"></span><div class="grow" style="min-width:0"><div style="font-weight:500">${name}</div><div class="d mono ell" style="font-size:11px">${img}</div></div>${prt || ''}</div>`;
+  const drawer = `<div class="drawer">
+    <div class="card"><div class="card-h">${ic('info')}<span class="t">Not deployed yet</span></div>
+      <div style="padding:2px 14px 14px;font-size:12.5px;display:flex;flex-direction:column;gap:7px">
+        <div class="flex g8"><span class="tag acc">webserver</span><span class="dim">image 2.13.5 → <span class="mono" style="color:var(--text)">2.14.0</span></span></div>
+        <div class="flex g8"><span class="tag acc">webserver</span><span class="dim">OCR language eng → <span class="mono" style="color:var(--text)">eng+deu</span></span></div>
+        <div class="ter" style="font-size:12px;margin-top:2px">Deploy recreates webserver only.</div></div></div>
+    <div class="card"><div class="card-h">${ic('stack')}<span class="t">Services</span><span class="ter" style="font-size:12px">4 of 4 running</span></div>
+      <div style="padding-bottom:6px">${s('webserver', 'paperless-ngx:2.13.5', 'run', '<span class="port link">:8000' + ic('ext') + '</span>')}${s('db', 'postgres:16', 'run')}${s('broker', 'redis:7', 'run')}${s('gotenberg', 'gotenberg:8', 'run')}</div></div>
+    <div class="card"><div class="card-h">${ic('clock')}<span class="t">Deploys</span></div>
+      <div class="kv" style="grid-template-columns:70px minmax(0,1fr)"><span>Nov 4</span><span>a41c9e2 · auto-update · OK</span><span>Oct 30</span><span>7d02b1f · by you · OK</span><span>Oct 21</span><span>first deploy</span></div></div>
+  </div>`;
+  const body = `${tb}<div class="split-h">${editor}${drawer}</div>`;
+  return frame({ sub: 'paperless', nav: 'stacks', tabs: TABS('paperless'), body });
+}
+
+function createWizard() {
+  const steps = [['Type', 1], ['Image', 2], ['Resources', 0], ['Storage', 0], ['Network', 0], ['Sharing', 0], ['Review', 0]]
+    .map(([t, s], k) => `<div class="step ${s === 1 ? 'done' : ''} ${s === 2 ? 'cur' : ''}"><span class="n">${s === 1 ? ic('check') : k + 1}</span>${t}</div>`).join('');
+  const img = (bg, l, t, d, sel) => `<div class="img ${sel ? 'sel' : ''}"><span class="logo" style="background:${bg}">${l}</span><div style="min-width:0"><div class="t">${t}</div><div class="d">${d}</div></div></div>`;
+  const imgs = [
+    img('#e95420', 'U', 'Ubuntu 24.04 LTS', 'Desktop · 1.1 GB', 1),
+    img('#a80030', 'D', 'Debian 12', 'Desktop · 860 MB'),
+    img('#3c6eb4', 'F', 'Fedora 41', 'Workstation · 1.3 GB'),
+    img('#1793d1', 'A', 'Arch Linux', 'Cloud · 520 MB'),
+    img('#5277c3', 'N', 'NixOS 25.05', 'Desktop · 1.0 GB'),
+    img('#0067c0', 'W', 'Windows 11', 'From an ISO · virtio drivers added'),
+    img('#73ba25', 'S', 'openSUSE Tumbleweed', 'Desktop · 1.2 GB'),
+    img('#0d597f', 'Al', 'Alpine 3.21', 'Cloud · 60 MB'),
+    img('var(--track)', ic('disc'), 'Another ISO…', 'Any bootable image'),
+  ].join('');
+  const res = (l, frac, v) => `<div class="res"><span class="dim">${l}</span><div class="slider"><div class="tr"><div class="fill" style="width:${frac}%"></div></div><div class="kn" style="left:${frac}%"></div></div><span class="rv">${v}</span></div>`;
+  const dlg = `<div class="veil"><div class="dialog">
+    <div class="steps"><div class="h">New workload</div>${steps}</div>
+    <div class="dlg-body"><div class="dlg-main">
+      <span class="seg" style="align-self:flex-start"><span class="on">${ic('vm')}Virtual machine</span><span>${ic('lxc')}LXC container</span><span>${ic('docker')}Docker</span><span>${ic('stack')}Compose stack</span></span>
+      <div class="flex g8"><div class="field grow">${ic('search')}<span class="ph">Search images</span></div><span class="dd">${ic('cloud')}images.linuxcontainers.org${ic('chev')}</span></div>
+      <div class="imgs">${imgs}</div>
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:22px;margin-top:4px">
+        <div><div class="lbl-s">Name</div><div class="field focus"><span>ubuntu-dev</span></div>
+          <div class="flex g8" style="margin-top:12px;font-size:12.5px"><span class="switch on"></span>Start when created</div>
+          <div class="flex g8" style="margin-top:10px;font-size:12.5px"><span class="switch on"></span>Share ~/Projects</div></div>
+        <div><div class="lbl-s">Quick size</div>${res('CPU', 33, '4 cores')}${res('Memory', 25, '8 GB')}${res('Disk', 30, '64 GB')}</div>
+      </div>
+    </div>
+    <div class="dlg-foot"><span class="ter" style="font-size:12px">${ic('info').replace('data-i', 'data-i style="width:14px;height:14px;vertical-align:-2px;margin-right:6px"')}SPICE display, clipboard and 3D are set up for you.</span><span class="grow"></span><span class="btn">Cancel</span><span class="btn">Back</span><span class="btn primary">Next</span></div>
+    </div></div></div>`;
+  return frame({ sub: 'Overview', nav: 'overview', tabs: TABS('overview'), body: overviewBody(), overlay: dlg });
+}
+
+function hostPage() {
+  const gauges = `<div class="card"><div class="card-h">${ic('laptop')}<span class="t">This computer</span><span class="ter" style="font-size:12px">Ryzen 9 7900 · 12 cores · 32 GB</span></div>
+    <div class="gauges">${gauge(0.23, 'CPU', '12 cores')}${gauge(0.61, 'Memory', '19.5 of 32 GB')}${gauge(0.56, 'Disk', '264 of 476 GB')}${gauge(0.04, 'Swap', '0.3 of 8 GB')}</div></div>`;
+  const W = 400, H = 120;
+  const cpu = pathOf(series(91, 60, 0.3, 0.22), W, H), mem = pathOf(series(92, 60, 0.6, 0.05), W, H);
+  const grid = [0.25, 0.5, 0.75].map((f) => `<line class="gl" x1="0" x2="${W}" y1="${H * f}" y2="${H * f}"/>`).join('');
+  const chart = `<div class="card"><div class="card-h">${ic('heart')}<span class="t">Last hour</span><span class="end"><span class="seg sm"><span class="on">1 h</span><span>24 h</span><span>7 d</span></span></span></div>
+    <div class="bigchart"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${grid}
+      <path d="${cpu} L${W} ${H} L0 ${H} Z" fill="color-mix(in srgb, var(--accent) 14%, transparent)"/><path d="${cpu}" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke"/>
+      <path d="${mem}" fill="none" stroke="var(--sw-teal)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-dasharray="5 4"/></svg></div>
+    <div class="legend"><span><b style="background:var(--accent)"></b>CPU</span><span><b style="background:var(--sw-teal)"></b>Memory</span><span class="grow"></span><span>Peak 71% at 21:42 · nyxos-dev build</span></div></div>`;
+  const eng = (n, v, d) => `<div class="opt"><span class="dot run" style="box-shadow:none"></span><div class="grow"><div style="font-weight:500">${n} <span class="ter" style="font-weight:400">${v}</span></div><div class="d">${d}</div></div>${ib('restart', 'sm')}${ib('logs', 'sm')}</div>`;
+  const engines = `<div class="card"><div class="card-h">${ic('logo')}<span class="t">Engines</span></div><div style="padding-bottom:6px">
+    ${eng('Docker', '27.5.1', 'overlay2 · /var/lib/docker · 7 containers')}${eng('Incus', '6.9', 'default pool on btrfs · 4 instances')}</div></div>`;
+  const ck = (t, ok = true) => `<div class="check ${ok ? '' : 'no'}">${ic(ok ? 'checkc' : 'alert')}<span>${t}</span></div>`;
+  const virt = `<div class="card"><div class="card-h">${ic('shield')}<span class="t">VM features</span></div>
+    <div style="padding:6px 14px 14px;display:grid;grid-template-columns:1fr 1fr;gap:9px 14px">${ck('KVM')}${ck('IOMMU · GPU passthrough')}${ck('Nested virtualization')}${ck('SPICE and virtio-gpu 3D')}${ck('virtiofs shared folders')}${ck('swtpm · vTPM')}${ck('UEFI and Secure Boot')}${ck('spice-vdagent missing in 1 VM', false)}</div></div>`;
+  const pool = (t, d, frac, r, warn) => `<div class="pool"><div><div class="t">${t}</div><div class="d">${d}</div></div><div class="r">${r}</div><div class="bar ${warn ? 'warn' : ''}"><b style="width:${frac}%"></b></div></div>`;
+  const storage = `<div class="card"><div class="card-h">${ic('storage')}<span class="t">Storage</span><span class="end">${ib('plus', 'sm')}</span></div><div style="padding-bottom:8px">
+    ${pool('default', 'Incus · btrfs · /var/lib/incus', 44, '212 GB free')}${pool('Docker data', 'overlay2 · images, volumes, build cache', 18, '84 GB used')}${pool('Backups', 'Folder · /mnt/t7/backups · external', 82, '38 GB free', 1)}</div></div>`;
+  const clean = (t, v, d) => `<div class="opt" style="min-height:40px"><div class="grow"><div>${t}</div></div><span class="ter tnum" style="font-size:12px">${d}</span><span class="tnum" style="width:64px;text-align:right;font-weight:500">${v}</span></div>`;
+  const cleanup = `<div class="card"><div class="card-h">${ic('broom')}<span class="t">Clean up</span><span class="ter" style="font-size:12px">9.3 GB can be freed</span></div><div>
+    ${clean('Unused images', '3.1 GB', '6 of 14')}${clean('Build cache', '2.4 GB', 'Docker')}${clean('Incus image cache', '2.2 GB', '4 images')}${clean('Unused volumes', '1.4 GB', '3')}${clean('Stopped containers', '180 MB', '2')}</div>
+    <div class="flex g8" style="padding:8px 14px 14px;justify-content:flex-end"><span class="btn sm">Review…</span><span class="btn sm danger">${ic('trash')}Free 9.3 GB</span></div></div>`;
+  const body = `<div class="view pad"><div class="flow">${gauges}${chart}</div><div class="flow" style="margin-top:12px">${engines}${virt}</div><div class="flow" style="margin-top:12px">${storage}${cleanup}</div></div>`;
+  return frame({ sub: 'This computer', nav: 'host', tabs: TABS('host'), body });
+}
+
+const SCREENS = {
+  create: createWizard,
+  host: hostPage,
+  'lxc-terminal': lxcTerminal,
+  'docker-logs': dockerLogs,
+  'stack-compose': stackCompose,
+  overview: () => frame({ sub: 'Overview', nav: 'overview', tabs: TABS('overview'), body: overviewBody() }),
+  'vm-display': vmDisplay,
+  'vm-hardware': vmHardware,
+  'vm-fullscreen': vmFullscreen,
+};
+boot(SCREENS);
+</script>
+</body>
+</html>

@@ -2,9 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum HostId {
+    #[default]
     Local,
     Remote,
 }
@@ -35,9 +36,10 @@ impl HostFilter {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Engine {
+    #[default]
     Docker,
     Incus,
 }
@@ -51,9 +53,10 @@ impl Engine {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum Kind {
+    #[default]
     Container,
     VirtualMachine,
 }
@@ -67,9 +70,10 @@ impl Kind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum RunState {
     Running,
+    #[default]
     Stopped,
     Paused,
     Other,
@@ -105,6 +109,9 @@ pub enum Action {
     Stop,
     Restart,
     Delete,
+    Pause,
+    Resume,
+    Kill,
 }
 
 impl Action {
@@ -114,6 +121,9 @@ impl Action {
             Self::Stop => "Stopping",
             Self::Restart => "Restarting",
             Self::Delete => "Deleting",
+            Self::Pause => "Pausing",
+            Self::Resume => "Resuming",
+            Self::Kill => "Forcing off",
         }
     }
 
@@ -123,11 +133,22 @@ impl Action {
             Self::Stop => "Stopped",
             Self::Restart => "Restarted",
             Self::Delete => "Deleted",
+            Self::Pause => "Paused",
+            Self::Resume => "Resumed",
+            Self::Kill => "Forced off",
         }
     }
 }
 
-#[derive(Debug, Clone)]
+/// A published port: `host` on the host forwards to `guest` inside the workload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PortMap {
+    pub host: u16,
+    pub guest: u16,
+    pub proto: String,
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct Workload {
     pub host: HostId,
     pub engine: Engine,
@@ -140,6 +161,133 @@ pub struct Workload {
     pub project: Option<String>,
     pub project_dir: Option<String>,
     pub compose_file: Option<String>,
+    /// The Compose service this container runs (`com.docker.compose.service`).
+    pub service: Option<String>,
+    pub ip: Option<String>,
+    pub ports: Vec<PortMap>,
+    /// When it last started, in seconds since the epoch.
+    pub started: Option<i64>,
+    pub autostart: bool,
+    /// The vCPU or core limit, when one is set.
+    pub cpus: Option<f64>,
+    pub mem_limit: Option<u64>,
+    /// "Ubuntu 24.04", "Windows 11": the guest's OS where the engine knows it.
+    pub os: Option<String>,
+    pub snapshots: usize,
+    /// Where its web UI lives: the `nyx.webui` label (Docker) or `user.nyx.webui` (Incus).
+    pub webui: Option<String>,
+}
+
+/// A live CPU and memory reading for one workload (see `Workload::key`).
+#[derive(Debug, Clone)]
+pub struct LiveSample {
+    pub key: String,
+    /// Percent of what it may use: its vCPUs, or the whole host when unlimited.
+    pub cpu: Option<f64>,
+    pub mem: Option<u64>,
+    pub mem_limit: Option<u64>,
+}
+
+/// Parses an Incus or Docker size ("8GiB", "512MB", "2g") into bytes.
+pub fn parse_size(text: &str) -> Option<u64> {
+    let t = text.trim();
+    if t.is_empty() {
+        return None;
+    }
+    let split = t.find(|c: char| !(c.is_ascii_digit() || c == '.')).unwrap_or(t.len());
+    let (num, unit) = t.split_at(split);
+    let n: f64 = num.parse().ok()?;
+    let unit = unit.trim().to_ascii_lowercase();
+    let mul: f64 = match unit.as_str() {
+        "" | "b" => 1.0,
+        "k" | "kb" => 1e3,
+        "kib" => 1024.0,
+        "m" | "mb" => 1e6,
+        "mib" => 1024.0 * 1024.0,
+        "g" | "gb" => 1e9,
+        "gib" => 1024.0 * 1024.0 * 1024.0,
+        "t" | "tb" => 1e12,
+        "tib" => 1024f64.powi(4),
+        _ => return None,
+    };
+    Some((n * mul) as u64)
+}
+
+/// The number of CPUs an Incus `limits.cpu` gives: a count ("4") or a set ("0-3,6").
+pub fn parse_cpus(text: &str) -> Option<f64> {
+    let t = text.trim();
+    if t.is_empty() {
+        return None;
+    }
+    if let Ok(n) = t.parse::<f64>() {
+        return Some(n);
+    }
+    let mut count = 0.0;
+    for part in t.split(',') {
+        let part = part.trim();
+        if let Some((a, b)) = part.split_once('-') {
+            let (a, b): (u32, u32) = (a.trim().parse().ok()?, b.trim().parse().ok()?);
+            count += f64::from(b.saturating_sub(a) + 1);
+        } else if part.parse::<u32>().is_ok() {
+            count += 1.0;
+        }
+    }
+    (count > 0.0).then_some(count)
+}
+
+/// "3d 4h", "5h 12m", "12m": how long ago `since` was.
+pub fn format_uptime(since: i64, now: i64) -> String {
+    let secs = (now - since).max(0);
+    let (d, h, m) = (secs / 86_400, (secs % 86_400) / 3600, (secs % 3600) / 60);
+    if d > 0 {
+        format!("{d}d {h}h")
+    } else if h > 0 {
+        format!("{h}h {m}m")
+    } else {
+        format!("{}m", m.max(1))
+    }
+}
+
+/// Seconds since the epoch for an RFC 3339 time ("2026-11-06T21:04:11.2-06:00").
+pub fn parse_rfc3339(text: &str) -> Option<i64> {
+    let t = text.trim();
+    let (date, rest) = t.split_once('T')?;
+    let mut d = date.split('-');
+    let (y, mo, da): (i64, i64, i64) = (d.next()?.parse().ok()?, d.next()?.parse().ok()?, d.next()?.parse().ok()?);
+    let (time, offset) = match rest.find(['Z', '+', '-']) {
+        Some(i) => rest.split_at(i),
+        None => (rest, ""),
+    };
+    let mut tp = time.split(':');
+    let h: i64 = tp.next()?.parse().ok()?;
+    let mi: i64 = tp.next()?.parse().ok()?;
+    let s: f64 = tp.next().unwrap_or("0").parse().ok()?;
+    let off = if offset.is_empty() || offset.starts_with('Z') {
+        0
+    } else {
+        let sign = if offset.starts_with('-') { -1 } else { 1 };
+        let o = &offset[1..];
+        let (oh, om) = o.split_once(':').unwrap_or((o, "0"));
+        sign * (oh.parse::<i64>().ok()? * 3600 + om.parse::<i64>().ok()? * 60)
+    };
+    if y < 1971 {
+        return None;
+    }
+    let days = days_from_civil(y, mo, da);
+    Some(days * 86_400 + h * 3600 + mi * 60 + s as i64 - off)
+}
+
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let doy = (153 * (m + if m > 2 { -3 } else { 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+pub fn now_secs() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }
 
 pub fn compose_file_from_labels(working_dir: Option<&str>, config_files: Option<&str>) -> Option<String> {
@@ -161,6 +309,28 @@ impl Workload {
     pub fn target_id(&self) -> &str {
         if self.id.is_empty() { &self.name } else { &self.id }
     }
+
+    /// Stable across refreshes: host, engine and id.
+    pub fn key(&self) -> String {
+        workload_key(self.host, self.engine, self.target_id())
+    }
+
+    /// Incus containers (LXC), as opposed to Docker containers.
+    pub fn is_lxc(&self) -> bool {
+        self.engine == Engine::Incus && self.kind == Kind::Container
+    }
+
+    pub fn kind_tag(&self) -> &'static str {
+        match (self.engine, self.kind) {
+            (Engine::Incus, Kind::VirtualMachine) => "VM",
+            (Engine::Incus, Kind::Container) => "LXC",
+            (Engine::Docker, _) => "DOCKER",
+        }
+    }
+}
+
+pub fn workload_key(host: HostId, engine: Engine, id: &str) -> String {
+    format!("{}|{}|{id}", host.label(), engine.label())
 }
 
 #[derive(Debug, Clone)]
@@ -578,6 +748,36 @@ mod tests {
     }
 
     #[test]
+    fn sizes_parse_incus_and_docker_units() {
+        assert_eq!(parse_size("8GiB"), Some(8 * 1024 * 1024 * 1024));
+        assert_eq!(parse_size("512MB"), Some(512_000_000));
+        assert_eq!(parse_size("2g"), Some(2_000_000_000));
+        assert_eq!(parse_size("lots"), None);
+    }
+
+    #[test]
+    fn cpu_limits_count_sets_and_numbers() {
+        assert_eq!(parse_cpus("4"), Some(4.0));
+        assert_eq!(parse_cpus("0-3,6"), Some(5.0));
+        assert_eq!(parse_cpus(""), None);
+    }
+
+    #[test]
+    fn rfc3339_times_honour_their_offset() {
+        assert_eq!(parse_rfc3339("1970-01-02T00:00:00Z"), None);
+        let utc = parse_rfc3339("2026-11-06T12:00:00Z").unwrap();
+        assert_eq!(parse_rfc3339("2026-11-06T06:00:00-06:00"), Some(utc));
+        assert_eq!(parse_rfc3339("2026-11-06T12:00:00.123456789Z"), Some(utc));
+    }
+
+    #[test]
+    fn uptime_reads_like_a_person_wrote_it() {
+        assert_eq!(format_uptime(0, 3 * 86_400 + 4 * 3600), "3d 4h");
+        assert_eq!(format_uptime(0, 5 * 3600 + 12 * 60), "5h 12m");
+        assert_eq!(format_uptime(0, 30), "1m");
+    }
+
+    #[test]
     fn check_titles_are_stable() {
         assert_eq!(CheckId::IncusDaemon.title(), "Incus daemon");
         assert_eq!(CheckId::DockerGroup.title(), "Docker group");
@@ -599,6 +799,7 @@ mod tests {
                     project: Some("app".into()),
                     project_dir: Some("/srv/app".into()),
                     compose_file: Some("/srv/app/compose.yaml".into()),
+                    ..Default::default()
                 },
                 Workload {
                     host: HostId::Local,
@@ -612,6 +813,7 @@ mod tests {
                     project: Some("app".into()),
                     project_dir: Some("/srv/app".into()),
                     compose_file: Some("/srv/app/compose.yaml".into()),
+                    ..Default::default()
                 },
             ],
             ..Snapshot::default()

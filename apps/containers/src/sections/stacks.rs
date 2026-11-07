@@ -1,114 +1,13 @@
-use crate::models::{Action, HostFilter, HostId, Snapshot, Stack};
+use crate::models::{Action, HostId, Stack};
 use crate::services::compose;
-use crate::widgets::{self, Col, OpsTable, Page};
+use crate::widgets;
 use crate::{window, worker};
 use gtk::gio;
 use gtk::prelude::*;
 use sourceview5::prelude::*;
-use std::cell::RefCell;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 
-struct List {
-    table: OpsTable,
-    count: gtk::Label,
-}
-
-thread_local! {
-    static UI: RefCell<Option<Rc<List>>> = const { RefCell::new(None) };
-}
-
-fn cols() -> [Col; 5] {
-    [
-        widgets::col("name", "Project", true, false, 0),
-        widgets::col("host", "Host", false, false, 88),
-        widgets::col("services", "Services", false, true, 88),
-        widgets::col("status", "Status", false, false, 96),
-        widgets::col("actions", "", false, true, 168),
-    ]
-}
-
-pub fn build(page: &Page) {
-    page.fill();
-    let (bar, count, actions) = widgets::page_header();
-    let create = widgets::primary_button("list-add-symbolic", "New stack");
-    create.connect_clicked(|_| open_editor(None));
-    actions.append(&create);
-    page.body.append(&bar);
-    let table = OpsTable::new(
-        &cols(),
-        "view-list-symbolic",
-        "No Compose stacks",
-        "Projects show up from Docker Compose labels, or create one with a compose.yaml.",
-    );
-    page.body.append(&table.root);
-    UI.with(|u| *u.borrow_mut() = Some(Rc::new(List { table, count })));
-}
-
-pub fn refresh(snapshot: &Snapshot, host: HostFilter, query: &str) {
-    let Some(ui) = UI.with(|u| u.borrow().clone()) else { return };
-    ui.table.clear();
-    let q = query.trim().to_ascii_lowercase();
-    let mut shown = 0;
-    for stack in snapshot.stacks(host) {
-        if !q.is_empty() && !stack.name.to_ascii_lowercase().contains(&q) {
-            continue;
-        }
-        ui.table.push(stack_cells(&stack));
-        shown += 1;
-    }
-    ui.table.set_count(shown);
-    widgets::set_count(&ui.count, shown, "stack");
-}
-
-fn stack_cells(stack: &Stack) -> Vec<gtk::Widget> {
-    let status = if stack.running == stack.total && stack.total > 0 {
-        widgets::status_pill("Running", "ok").upcast()
-    } else if stack.running > 0 {
-        widgets::status_pill("Partial", "").upcast()
-    } else {
-        widgets::status_pill("Stopped", "").upcast()
-    };
-    let actions = widgets::actions_cell();
-    let host = stack.host;
-    let names = stack.names.clone();
-    if stack.running < stack.total {
-        let up = widgets::icon_button("media-playback-start-symbolic", "Up");
-        let s = stack.clone();
-        up.connect_clicked(move |_| run_stack(&s, Action::Start));
-        actions.append(&up);
-    }
-    if stack.running > 0 {
-        let down = widgets::icon_button("media-playback-stop-symbolic", "Down");
-        let s = stack.clone();
-        down.connect_clicked(move |_| run_stack(&s, Action::Stop));
-        actions.append(&down);
-        let restart = widgets::icon_button("view-refresh-symbolic", "Restart");
-        let s = stack.clone();
-        restart.connect_clicked(move |_| run_stack(&s, Action::Restart));
-        actions.append(&restart);
-    }
-    let logs = widgets::icon_button("utilities-system-monitor-symbolic", "Logs");
-    let n = names.clone();
-    let project = stack.name.clone();
-    logs.connect_clicked(move |_| {
-        crate::sections::session::open_stack_logs(host, crate::models::Engine::Docker, &project, n.clone())
-    });
-    actions.append(&logs);
-    let edit = widgets::icon_button("document-edit-symbolic", "Edit YAML");
-    let s = stack.clone();
-    edit.connect_clicked(move |_| open_editor(Some(s.clone())));
-    actions.append(&edit);
-    vec![
-        widgets::td(&stack.name),
-        widgets::td_dim(&window::host_name(stack.host)),
-        widgets::td_dim(&format!("{}/{}", stack.running, stack.total)),
-        status,
-        actions.upcast(),
-    ]
-}
-
-fn run_stack(stack: &Stack, action: Action) {
+pub fn run_stack(stack: &Stack, action: Action) {
     window::toast(&format!("{} {}…", action.gerund(), stack.name));
     if let Some((dir, file)) = compose_paths(stack)
         && stack.host == HostId::Local
@@ -119,13 +18,13 @@ fn run_stack(stack: &Stack, action: Action) {
     worker::stack_op(stack.host, stack.names.clone(), action);
 }
 
-fn compose_paths(stack: &Stack) -> Option<(String, String)> {
+pub fn compose_paths(stack: &Stack) -> Option<(String, String)> {
     let dir = stack.project_dir.clone().filter(|s| !s.is_empty())?;
     let file = stack.compose_file.clone().unwrap_or_else(|| default_compose_path(Path::new(&dir)).display().to_string());
     Some((dir, file))
 }
 
-fn default_compose_path(dir: &Path) -> PathBuf {
+pub fn default_compose_path(dir: &Path) -> PathBuf {
     for name in ["compose.yaml", "compose.yml", "docker-compose.yml", "docker-compose.yaml"] {
         let p = dir.join(name);
         if p.exists() {
@@ -135,7 +34,7 @@ fn default_compose_path(dir: &Path) -> PathBuf {
     dir.join("compose.yaml")
 }
 
-fn open_editor(existing: Option<Stack>) {
+pub fn open_editor(existing: Option<Stack>) {
     let title = existing.as_ref().map(|s| format!("Edit {}", s.name)).unwrap_or_else(|| "New stack".into());
     let (dialog, card) = widgets::dialog(&title, 780);
     dialog.set_default_height(640);
@@ -266,12 +165,12 @@ fn open_editor(existing: Option<Stack>) {
     dialog.present();
 }
 
-fn load_yaml(stack: &Stack) -> Option<String> {
+pub fn load_yaml(stack: &Stack) -> Option<String> {
     let (_, file) = compose_paths(stack)?;
     std::fs::read_to_string(file).ok()
 }
 
-fn write_compose(
+pub fn write_compose(
     name: &str,
     dir: &str,
     buffer: &sourceview5::Buffer,

@@ -3,6 +3,7 @@
 mod dialog_dismissal;
 mod cmd;
 mod engines;
+mod history;
 mod models;
 mod paths;
 mod prefs;
@@ -10,6 +11,7 @@ mod sections;
 mod security;
 mod services;
 mod settings_dialog;
+mod tabs;
 mod theme;
 mod widgets;
 mod window;
@@ -22,8 +24,10 @@ pub const APP_ID: &str = "io.github.design_nexus.nyx.Containers";
 
 const USAGE: &str = "Usage: nyx-containers [OPTIONS]\n\
 \n\
-  --section ID    open (or switch the open window) to a page: overview, containers,\n\
-                  vms, stacks, images, networks, storage, connections\n\
+  --section ID    open (or switch the open window) to a page: overview, vms, lxc,\n\
+                  docker, stacks, images, storage, networks, host, connections\n\
+  --open NAME     open a workload or stack in a tab\n\
+  --view VIEW     with --open: summary, display, terminal, logs, snapshots, compose\n\
   --toggle        close the window if it's open, otherwise open it\n";
 
 fn main() -> glib::ExitCode {
@@ -51,6 +55,10 @@ fn main() -> glib::ExitCode {
         }
         let section = argv.windows(2).find(|w| w[0] == "--section").map(|w| w[1].as_str());
         window::present(app, section);
+        if let Some(name) = argv.windows(2).find(|w| w[0] == "--open").map(|w| w[1].clone()) {
+            let view = argv.windows(2).find(|w| w[0] == "--view").map(|w| w[1].clone());
+            window::open_by_name(&name, view.as_deref());
+        }
         glib::ExitCode::SUCCESS
     });
     app.connect_shutdown(|_| {

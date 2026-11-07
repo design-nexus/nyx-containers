@@ -152,23 +152,80 @@ async fn list(docker: &Docker, host: HostId) -> Result<(String, Vec<Workload>), 
                 project_dir.as_deref(),
                 labels.and_then(|l| l.get("com.docker.compose.project.config_files")).map(String::as_str),
             );
+            let mut ports: Vec<crate::models::PortMap> = c
+                .ports
+                .as_deref()
+                .unwrap_or(&[])
+                .iter()
+                .filter_map(|p| {
+                    Some(crate::models::PortMap {
+                        host: p.public_port?,
+                        guest: p.private_port,
+                        proto: p.typ.map(|t| t.to_string()).unwrap_or_else(|| "tcp".into()),
+                    })
+                })
+                .collect();
+            ports.sort_by_key(|p| p.host);
+            ports.dedup_by_key(|p| (p.host, p.proto.clone()));
+            let ip = c
+                .network_settings
+                .as_ref()
+                .and_then(|n| n.networks.as_ref())
+                .and_then(|nets| nets.values().find_map(|e| e.ip_address.clone().filter(|s| !s.is_empty())));
+            let state = RunState::from_status(&c.state.map(|s| s.to_string()).unwrap_or_else(|| status.clone()));
+            let started = (state == RunState::Running).then(|| up_seconds(&status).map(|s| crate::models::now_secs() - s)).flatten();
             Workload {
                 host,
                 engine: Engine::Docker,
                 kind: Kind::Container,
                 name,
                 id,
-                state: RunState::from_status(&status),
-                status,
+                state,
                 image: c.image,
                 project,
                 project_dir,
                 compose_file,
+                service: labels.and_then(|l| l.get("com.docker.compose.service")).cloned(),
+                ip,
+                ports,
+                started,
+                webui: labels.and_then(|l| l.get("nyx.webui")).cloned().filter(|s| !s.is_empty()),
+                status,
+                ..Default::default()
             }
         })
         .collect();
     let ver = version.as_ref().and_then(|v| v.version.clone()).unwrap_or_else(|| "Docker".into());
     Ok((ver, workloads))
+}
+
+/// Seconds from Docker's "Up 3 days (healthy)" status; None when it isn't up.
+fn up_seconds(status: &str) -> Option<i64> {
+    let rest = status.trim().strip_prefix("Up ")?;
+    let rest = rest.split(" (").next().unwrap_or(rest).trim();
+    if rest.starts_with("Less than") {
+        return Some(1);
+    }
+    if rest.starts_with("About a minute") {
+        return Some(60);
+    }
+    if rest.starts_with("About an hour") {
+        return Some(3600);
+    }
+    let mut parts = rest.split_whitespace();
+    let n: i64 = parts.next()?.parse().ok()?;
+    let unit = parts.next()?;
+    let mul = match unit.trim_end_matches('s') {
+        "second" => 1,
+        "minute" => 60,
+        "hour" => 3600,
+        "day" => 86_400,
+        "week" => 604_800,
+        "month" => 2_592_000,
+        "year" => 31_536_000,
+        _ => return None,
+    };
+    Some(n * mul)
 }
 
 fn classify_docker_error(err: &str) -> String {
@@ -288,6 +345,9 @@ pub async fn operate(host: HostId, remote: &RemoteProfile, name: &str, action: A
         Action::Start => docker.start_container(name, None::<bollard::query_parameters::StartContainerOptions>).await,
         Action::Stop => docker.stop_container(name, None::<bollard::query_parameters::StopContainerOptions>).await,
         Action::Restart => docker.restart_container(name, None::<bollard::query_parameters::RestartContainerOptions>).await,
+        Action::Pause => docker.pause_container(name).await,
+        Action::Resume => docker.unpause_container(name).await,
+        Action::Kill => docker.kill_container(name, None::<bollard::query_parameters::KillContainerOptions>).await,
         Action::Delete => {
             let opts = RemoveContainerOptionsBuilder::default().force(true).build();
             docker.remove_container(name, Some(opts)).await
@@ -400,6 +460,33 @@ fn cpu_percent(stats: &bollard::models::ContainerStatsResponse) -> Option<f64> {
     }
     let ncpus = cpu.online_cpus.unwrap_or(1).max(1) as f64;
     Some((delta / sysdelta) * ncpus * 100.0)
+}
+
+/// One reading per running container: (id, CPU ns, system CPU ns, online CPUs, memory used, memory limit).
+pub async fn live_usage(host: HostId, remote: &RemoteProfile) -> Result<Vec<(String, u64, u64, u64, Option<u64>, Option<u64>)>, String> {
+    let docker = connect(host, remote).await?;
+    let running = docker.list_containers(Some(ListContainersOptions::default())).await.map_err(|e| e.to_string())?;
+    let reads = running.into_iter().filter_map(|c| c.id).map(|id| {
+        let docker = docker.clone();
+        async move {
+            let opts = StatsOptionsBuilder::default().stream(false).one_shot(true).build();
+            let mut stream = docker.stats(&id, Some(opts));
+            let stats = stream.next().await?.ok()?;
+            let cpu = stats.cpu_stats.as_ref()?;
+            let total = cpu.cpu_usage.as_ref()?.total_usage?;
+            let system = cpu.system_cpu_usage?;
+            let online = u64::from(cpu.online_cpus.unwrap_or(1).max(1));
+            let mem = stats.memory_stats.as_ref().and_then(|m| {
+                let usage = m.usage?;
+                // Page cache isn't the container's own memory; `docker stats` leaves it out too.
+                let cache = m.stats.as_ref().and_then(|s| s.get("inactive_file").copied()).unwrap_or(0);
+                Some(usage.saturating_sub(cache))
+            });
+            let limit = stats.memory_stats.as_ref().and_then(|m| m.limit);
+            Some((id, total, system, online, mem, limit))
+        }
+    });
+    Ok(futures_util::future::join_all(reads).await.into_iter().flatten().collect())
 }
 
 pub async fn list_images(host: HostId, remote: &RemoteProfile) -> Result<Vec<Image>, String> {
@@ -702,6 +789,13 @@ pub async fn exec(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn up_status_gives_seconds() {
+        assert_eq!(up_seconds("Up 3 days (healthy)"), Some(3 * 86_400));
+        assert_eq!(up_seconds("Up About an hour"), Some(3600));
+        assert_eq!(up_seconds("Exited (0) 2 days ago"), None);
+    }
 
     #[test]
     fn unix_docker_host_is_the_only_candidate() {

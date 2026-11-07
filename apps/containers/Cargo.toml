@@ -12,9 +12,9 @@ name = "nyx-containers"
 path = "src/main.rs"
 
 [dependencies]
-nyx-core = { git = "https://github.com/design-nexus/nyx-core.git", rev = "52cba5e27a3dd5f00c780f53e423302b4b5f9c9c" }
-nyx-ui = { git = "https://github.com/design-nexus/nyx-design.git", rev = "b723d5535652a8e23e4676c328a02900fd17be0f" }
-nyx-theme = { git = "https://github.com/design-nexus/nyx-design.git", rev = "b723d5535652a8e23e4676c328a02900fd17be0f" }
+nyx-core = { git = "https://github.com/design-nexus/nyx-core.git", rev = "0b511a6e338f4c2c818bad6ebd351ae406578c00" }
+nyx-ui = { git = "https://github.com/design-nexus/nyx-design.git", rev = "aa7106fb66eeb5d53487c1cb15c34ad69096dadc" }
+nyx-theme = { git = "https://github.com/design-nexus/nyx-design.git", rev = "aa7106fb66eeb5d53487c1cb15c34ad69096dadc" }
 anyhow = "1.0.104"
 async-channel = "2"
 base64 = "0.22"

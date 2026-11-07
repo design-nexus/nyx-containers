@@ -1,56 +1,61 @@
+//! A host's page: its resources, engines and what runs on it.
+
 use crate::models::{ConnState, EngineStatus, HostFilter, HostHealth, HostId, RunState, Snapshot};
+
 use crate::widgets::{self, OpsTable, Page};
 use crate::{settings_dialog, window};
 use gtk::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-struct Overview {
+struct HostPage {
+    host: HostId,
     body: gtk::Box,
 }
 
 thread_local! {
-    static UI: RefCell<Option<Rc<Overview>>> = const { RefCell::new(None) };
+    static UI: RefCell<Vec<Rc<HostPage>>> = const { RefCell::new(Vec::new()) };
     static HEALTH: RefCell<Vec<HostHealth>> = const { RefCell::new(Vec::new()) };
 }
 
-pub fn build(page: &Page) {
+pub fn build_local(page: &Page) {
+    build(page, HostId::Local);
+}
+
+pub fn build_remote(page: &Page) {
+    build(page, HostId::Remote);
+}
+
+fn build(page: &Page, host: HostId) {
     page.body.add_css_class("overview-page");
-    UI.with(|u| {
-        *u.borrow_mut() = Some(Rc::new(Overview { body: page.body.clone() }));
-    });
+    UI.with(|u| u.borrow_mut().push(Rc::new(HostPage { host, body: page.body.clone() })));
+    if let Some(snap) = window::snapshot() {
+        refresh(&snap);
+    }
 }
 
 pub fn apply_health(list: Vec<HostHealth>) {
     HEALTH.with(|h| *h.borrow_mut() = list);
     if let Some(snap) = window::snapshot() {
-        refresh(&snap, window::host_filter());
+        refresh(&snap);
     }
 }
 
-pub fn refresh(snapshot: &Snapshot, host: HostFilter) {
-    let Some(ui) = UI.with(|u| u.borrow().clone()) else { return };
-    while let Some(c) = ui.body.first_child() {
-        ui.body.remove(&c);
-    }
-    let (bar, count, _) = widgets::page_header();
-    ui.body.append(&bar);
-    let hosts: Vec<HostId> = match host {
-        HostFilter::All => vec![HostId::Local, HostId::Remote],
-        HostFilter::Local => vec![HostId::Local],
-        HostFilter::Remote => vec![HostId::Remote],
-    };
-    let mut boards = 0;
-    for id in hosts {
-        if host == HostFilter::All && id == HostId::Remote && !snapshot.engines.iter().any(|e| e.host == HostId::Remote) {
+pub fn refresh(snapshot: &Snapshot) {
+    for ui in UI.with(|u| u.borrow().clone()) {
+        while let Some(c) = ui.body.first_child() {
+            ui.body.remove(&c);
+        }
+        if ui.host == HostId::Remote && !crate::prefs::get().remote.configured() {
+            ui.body.append(&widgets::empty_state(
+                "network-server-symbolic",
+                "No remote host yet",
+                "Add a home server or another computer over SSH (Docker) and HTTPS (Incus).",
+                Some(("Add a remote", Box::new(|| window::navigate("connections")))),
+            ));
             continue;
         }
-        ui.body.append(&host_panel(snapshot, id));
-        boards += 1;
-    }
-    count.set_text(&if boards == 1 { "1 host".to_string() } else { format!("{boards} hosts") });
-    if ui.body.last_child().is_none() {
-        ui.body.append(&widgets::empty_state("computer-symbolic", "No host", "Pick Local or add a remote on Connections.", None));
+        ui.body.append(&host_panel(snapshot, ui.host));
     }
 }
 
@@ -133,7 +138,7 @@ fn host_panel(snapshot: &Snapshot, host: HostId) -> gtk::Box {
         ]);
         let guest = w.clone();
         let click = gtk::GestureClick::new();
-        click.connect_released(move |_, _, _, _| crate::sections::workloads::reveal(&guest));
+        click.connect_released(move |_, _, _, _| crate::sections::actions::open(&guest, None));
         row.add_controller(click);
         shown += 1;
     }
