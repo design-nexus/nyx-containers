@@ -53,6 +53,7 @@ pub fn refresh(snapshot: &Snapshot, host: HostFilter, query: &str) {
                 sub.push(format!("created {d}"));
             }
             let short_id: String = img.id.trim_start_matches("sha256:").chars().take(12).collect();
+            sub.push(format!("ID {short_id}"));
             let mut actions: Vec<gtk::Widget> = Vec::new();
             if img.engine == Engine::Docker && !dangling {
                 let pull = widgets::icon_button("folder-download-symbolic", "Pull a newer copy");
@@ -81,7 +82,7 @@ pub fn refresh(snapshot: &Snapshot, host: HostFilter, query: &str) {
                 tags,
                 sub: sub.join(" · "),
                 chips: users,
-                facts: vec![("ID".into(), short_id)],
+                facts: Vec::new(),
                 bar: None,
                 actions,
             }

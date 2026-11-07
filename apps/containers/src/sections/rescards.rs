@@ -163,6 +163,7 @@ fn card(item: Item, narrow: bool) -> gtk::Box {
 
     let text = widgets::vbox(3);
     text.set_hexpand(true);
+    text.set_size_request(120, -1);
     text.set_valign(gtk::Align::Center);
     let title_row = widgets::hbox(7);
     let title = widgets::label(&item.title, "wl-name");
@@ -200,6 +201,8 @@ fn card(item: Item, narrow: bool) -> gtk::Box {
         let facts = widgets::vbox(3);
         facts.set_valign(gtk::Align::Center);
         facts.set_size_request(200, -1);
+        // Fixed, so it sits at the same place on every card whatever the title.
+        facts.set_hexpand(false);
         for (k, v) in &item.facts {
             let row = widgets::hbox(8);
             let key = widgets::label(k, "tab-kv-key res-fact");
@@ -209,7 +212,8 @@ fn card(item: Item, narrow: bool) -> gtk::Box {
             let val = widgets::label(v, "res-fact");
             val.set_xalign(0.0);
             val.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
-            val.set_hexpand(true);
+            val.set_width_chars(16);
+            val.set_max_width_chars(16);
             val.set_selectable(true);
             row.append(&val);
             facts.append(&row);
@@ -224,13 +228,16 @@ fn card(item: Item, narrow: bool) -> gtk::Box {
         bar.set_valign(gtk::Align::Center);
         root.append(&bar);
     }
+    // A fixed column with its buttons against the right edge, so they line up.
     let acts = widgets::hbox(2);
     acts.set_valign(gtk::Align::Center);
-    acts.set_halign(gtk::Align::End);
-    // A fixed column, so the facts beside it line up from card to card.
+    acts.set_hexpand(false);
     if !narrow {
-        acts.set_size_request(170, -1);
+        acts.set_size_request(176, -1);
     }
+    let push = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    push.set_hexpand(true);
+    acts.append(&push);
     for a in item.actions {
         acts.append(&a);
     }

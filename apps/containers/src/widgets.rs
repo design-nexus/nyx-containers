@@ -2,6 +2,15 @@
 
 pub use nyx_ui::widgets::*;
 
+/// A label with any number of space-separated classes ("dim mono-path").
+pub fn label(text: &str, classes: &str) -> gtk::Label {
+    let l = nyx_ui::widgets::label(text, "");
+    for c in classes.split_whitespace() {
+        l.add_css_class(c);
+    }
+    l
+}
+
 use gtk::prelude::*;
 use sourceview5::prelude::*;
 
@@ -16,8 +25,10 @@ pub fn page(section: &str) -> Page {
     body.add_css_class(&format!("page-{section}"));
     body.set_hexpand(true);
 
+    // External, not Never: a page's minimum width must not become the window's,
+    // or a window opened wide can't shrink into a half-screen tile.
     let root = gtk::ScrolledWindow::builder()
-        .hscrollbar_policy(gtk::PolicyType::Never)
+        .hscrollbar_policy(gtk::PolicyType::External)
         .vscrollbar_policy(gtk::PolicyType::External)
         .child(&body)
         .vexpand(true)

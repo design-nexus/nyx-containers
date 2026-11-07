@@ -201,10 +201,18 @@ fn build(app: &gtk::Application) {
     column.append(&tab_row.root);
     column.append(&main);
 
+    // Same for tabs: their content may not set the window's minimum width.
+    let column_scroll = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::External)
+        .vscrollbar_policy(gtk::PolicyType::Never)
+        .hexpand(true)
+        .vexpand(true)
+        .child(&column)
+        .build();
     let body = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     body.set_vexpand(true);
     body.append(&sidebar.root);
-    body.append(&column);
+    body.append(&column_scroll);
 
     let header = chrome::app_header(&window, "package-x-generic-symbolic", "Containers");
     let collapse = widgets::bar_button("sidebar-show-symbolic", "Collapse the sidebar (Ctrl+B)");
