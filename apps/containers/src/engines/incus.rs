@@ -660,9 +660,43 @@ pub async fn operate(host: HostId, remote: &RemoteProfile, name: &str, action: A
 
 pub async fn create(remote: &RemoteProfile, spec: &CreateSpec) -> Result<String, String> {
     let conn = connect(spec.host, remote).await?;
-    let kind = if spec.kind == Kind::VirtualMachine { "virtual-machine" } else { "container" };
-    let source = image_source(&spec.image);
-    let body = json!({ "name": spec.name, "type": kind, "source": source });
+    let vm = spec.kind == Kind::VirtualMachine;
+    let kind = if vm { "virtual-machine" } else { "container" };
+    let source = match (&spec.iso, spec.from_server) {
+        (Some(_), _) => json!({ "type": "none" }),
+        (None, true) => json!({
+            "type": "image",
+            "mode": "pull",
+            "server": "https://images.linuxcontainers.org",
+            "protocol": "simplestreams",
+            "alias": spec.image.trim(),
+        }),
+        (None, false) => image_source(&spec.image),
+    };
+    let mut config = serde_json::Map::new();
+    if let Some(c) = spec.cpus {
+        config.insert("limits.cpu".into(), json!(c.to_string()));
+    }
+    if let Some(m) = spec.memory_gib {
+        config.insert("limits.memory".into(), json!(format!("{}MiB", (m * 1024.0).round() as u64)));
+    }
+    let mut devices = serde_json::Map::new();
+    if let Some(size) = spec.disk_gib {
+        let profile: Value = call(&conn, Method::GET, "/1.0/profiles/default", None).await.unwrap_or(Value::Null);
+        let pool = profile.pointer("/devices/root/pool").and_then(|v| v.as_str()).unwrap_or("default").to_string();
+        devices.insert("root".into(), json!({ "type": "disk", "path": "/", "pool": pool, "size": format!("{size}GiB") }));
+    }
+    if let Some(iso) = &spec.iso {
+        devices.insert("install".into(), json!({ "type": "disk", "source": iso, "boot.priority": "10" }));
+    }
+    for (i, (host_path, guest_path)) in spec.shares.iter().enumerate() {
+        let mut dev = json!({ "type": "disk", "source": host_path, "path": guest_path });
+        if !vm {
+            dev["shift"] = json!("true");
+        }
+        devices.insert(if i == 0 { "share".into() } else { format!("share{}", i + 1) }, dev);
+    }
+    let body = json!({ "name": spec.name, "type": kind, "source": source, "config": config, "devices": devices });
     let _: Value = call(&conn, Method::POST, "/1.0/instances", Some(body)).await?;
     if spec.start {
         let start = json!({ "action": "start", "timeout": 30, "force": false, "stateful": false });

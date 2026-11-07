@@ -28,7 +28,12 @@ const USAGE: &str = "Usage: nyx-containers [OPTIONS]\n\
                   docker, stacks, images, storage, networks, host, connections\n\
   --open NAME     open a workload or stack in a tab\n\
   --view VIEW     with --open: summary, display, terminal, logs, snapshots, compose\n\
+  --new           open the New workload dialog\n\
   --toggle        close the window if it's open, otherwise open it\n";
+
+fn sections_create_open() {
+    sections::create::open(None);
+}
 
 fn main() -> glib::ExitCode {
     nyx_core::app::init(nyx_core::app::App { slug: "nyx-containers", name: "Containers" });
@@ -55,6 +60,10 @@ fn main() -> glib::ExitCode {
         }
         let section = argv.windows(2).find(|w| w[0] == "--section").map(|w| w[1].as_str());
         window::present(app, section);
+        if argv.iter().any(|a| a == "--new") {
+            // After the window shows: the card lives inside it.
+            glib::idle_add_local_once(sections_create_open);
+        }
         if let Some(name) = argv.windows(2).find(|w| w[0] == "--open").map(|w| w[1].clone()) {
             let view = argv.windows(2).find(|w| w[0] == "--view").map(|w| w[1].clone());
             window::open_by_name(&name, view.as_deref());

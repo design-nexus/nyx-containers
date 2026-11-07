@@ -782,6 +782,69 @@ pub fn apply_test(results: Vec<crate::models::EngineStatus>) {
     toast(&format!("{name}: {ok} of {} engines connected.", results.len()));
 }
 
+/// A card over the window on a dimmed backdrop, like the settings card. Returns the
+/// card to fill and a function that closes it; Esc or a click outside also closes.
+pub fn overlay_card(title: &str, width: i32) -> (gtk::Box, Rc<dyn Fn()>) {
+    let veil = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    veil.add_css_class("card-veil");
+    veil.set_hexpand(true);
+    veil.set_vexpand(true);
+    veil.set_focusable(true);
+    let card = widgets::vbox(14);
+    card.add_css_class("overlay-card");
+    card.set_halign(gtk::Align::Center);
+    card.set_valign(gtk::Align::Center);
+    card.set_vexpand(true);
+    card.set_size_request(width, -1);
+    let head = widgets::hbox(8);
+    let t = widgets::label(title, "overlay-card-title");
+    t.set_hexpand(true);
+    t.set_xalign(0.0);
+    head.append(&t);
+    let x = widgets::icon_button("window-close-symbolic", "Close (Esc)");
+    head.append(&x);
+    card.append(&head);
+    veil.append(&card);
+    let overlay = overlay();
+    let close: Rc<dyn Fn()> = {
+        let (veil, overlay) = (veil.clone(), overlay.clone());
+        Rc::new(move || {
+            if let Some(o) = &overlay
+                && veil.parent().is_some()
+            {
+                o.remove_overlay(&veil);
+            }
+        })
+    };
+    let c = close.clone();
+    x.connect_clicked(move |_| c());
+    let keys = gtk::EventControllerKey::new();
+    let c = close.clone();
+    keys.connect_key_pressed(move |_, key, _, _| {
+        if key == gdk::Key::Escape {
+            c();
+            return glib::Propagation::Stop;
+        }
+        glib::Propagation::Proceed
+    });
+    veil.add_controller(keys);
+    let click = gtk::GestureClick::new();
+    let (c, card_ref) = (close.clone(), card.clone());
+    click.connect_released(move |g, _, x, y| {
+        let Some(v) = g.widget() else { return };
+        let inside = card_ref.compute_bounds(&v).is_some_and(|b| b.contains_point(&gtk::graphene::Point::new(x as f32, y as f32)));
+        if !inside {
+            c();
+        }
+    });
+    veil.add_controller(click);
+    if let Some(o) = overlay {
+        o.add_overlay(&veil);
+        veil.grab_focus();
+    }
+    (card, close)
+}
+
 pub fn toast(message: &str) {
     match overlay() {
         Some(overlay) => nyx_ui::toast::show(&overlay, message),

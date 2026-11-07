@@ -158,7 +158,7 @@ mod tests {
             kind: crate::models::Kind::VirtualMachine,
             name: "vm".into(),
             image: "ubuntu".into(),
-            start: false,
+            ..Default::default()
         };
         let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
         let err = rt.block_on(create(&RemoteProfile::default(), &spec)).unwrap_err();

@@ -333,14 +333,29 @@ pub fn workload_key(host: HostId, engine: Engine, id: &str) -> String {
     format!("{}|{}|{id}", host.label(), engine.label())
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CreateSpec {
     pub host: HostId,
     pub engine: Engine,
     pub kind: Kind,
     pub name: String,
+    /// A Docker reference, an Incus alias ("ubuntu/24.04") or fingerprint.
     pub image: String,
     pub start: bool,
+    /// Pull `image` from the public Incus image server instead of this host's images.
+    pub from_server: bool,
+    /// Boot a new, empty VM from this ISO instead of an image.
+    pub iso: Option<String>,
+    pub cpus: Option<u32>,
+    pub memory_gib: Option<f64>,
+    pub disk_gib: Option<u32>,
+    /// Host folders to share: (host path, guest path).
+    pub shares: Vec<(String, String)>,
+    /// Docker: "8080:80" pairs, "host:guest" bind mounts, KEY=value, restart policy.
+    pub ports: Vec<(u16, u16)>,
+    pub volumes: Vec<(String, String)>,
+    pub env: Vec<String>,
+    pub restart: String,
 }
 
 #[derive(Debug, Clone)]

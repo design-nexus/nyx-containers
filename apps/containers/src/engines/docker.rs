@@ -362,8 +362,41 @@ pub async fn create(remote: &RemoteProfile, spec: &CreateSpec) -> Result<String,
         return Err("Docker does not run virtual machines.".into());
     }
     let docker = connect(spec.host, remote).await?;
+    if docker.inspect_image(&spec.image).await.is_err() {
+        let opts = CreateImageOptionsBuilder::default().from_image(&spec.image).build();
+        let mut stream = docker.create_image(Some(opts), None, None);
+        while let Some(item) = stream.next().await {
+            item.map_err(|e| format!("Couldn't pull {}: {e}", spec.image))?;
+        }
+    }
+    let mut exposed = Vec::new();
+    let mut bindings = std::collections::HashMap::new();
+    for (host_port, guest_port) in &spec.ports {
+        let key = format!("{guest_port}/tcp");
+        exposed.push(key.clone());
+        bindings.insert(key, Some(vec![bollard::models::PortBinding { host_ip: None, host_port: Some(host_port.to_string()) }]));
+    }
+    let binds: Vec<String> = spec.volumes.iter().map(|(h, g)| format!("{h}:{g}")).collect();
+    let restart = match spec.restart.as_str() {
+        "always" => Some(bollard::models::RestartPolicyNameEnum::ALWAYS),
+        "unless-stopped" => Some(bollard::models::RestartPolicyNameEnum::UNLESS_STOPPED),
+        "on-failure" => Some(bollard::models::RestartPolicyNameEnum::ON_FAILURE),
+        _ => None,
+    };
+    let host_config = bollard::models::HostConfig {
+        port_bindings: (!bindings.is_empty()).then_some(bindings),
+        binds: (!binds.is_empty()).then_some(binds),
+        restart_policy: restart.map(|name| bollard::models::RestartPolicy { name: Some(name), maximum_retry_count: None }),
+        ..Default::default()
+    };
     let opts = CreateContainerOptionsBuilder::default().name(&spec.name).build();
-    let body = ContainerCreateBody { image: Some(spec.image.clone()), ..Default::default() };
+    let body = ContainerCreateBody {
+        image: Some(spec.image.clone()),
+        env: (!spec.env.is_empty()).then(|| spec.env.clone()),
+        exposed_ports: (!exposed.is_empty()).then_some(exposed),
+        host_config: Some(host_config),
+        ..Default::default()
+    };
     docker.create_container(Some(opts), body).await.map_err(|e| e.to_string())?;
     if spec.start {
         docker
