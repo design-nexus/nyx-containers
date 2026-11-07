@@ -613,6 +613,53 @@ pub async fn host_disk(host: HostId, remote: &RemoteProfile) -> Result<(u64, Opt
     Ok((used, None))
 }
 
+pub async fn disk_usage(host: HostId, remote: &RemoteProfile) -> Result<crate::models::DockerUsage, String> {
+    let docker = connect(host, remote).await?;
+    let df = docker.df(None::<bollard::query_parameters::DataUsageOptions>).await.map_err(|e| e.to_string())?;
+    let u = |a: Option<i64>, t: Option<i64>, size: Option<i64>, r: Option<i64>| crate::models::Usage {
+        count: t.unwrap_or(0).max(0) as u64,
+        active: a.unwrap_or(0).max(0) as u64,
+        total: size.unwrap_or(0).max(0) as u64,
+        reclaimable: r.unwrap_or(0).max(0) as u64,
+    };
+    Ok(crate::models::DockerUsage {
+        images: df.image_usage.map(|x| u(x.active_count, x.total_count, x.total_size, x.reclaimable)).unwrap_or_default(),
+        containers: df.container_usage.map(|x| u(x.active_count, x.total_count, x.total_size, x.reclaimable)).unwrap_or_default(),
+        volumes: df.volume_usage.map(|x| u(x.active_count, x.total_count, x.total_size, x.reclaimable)).unwrap_or_default(),
+        build_cache: df.build_cache_usage.map(|x| u(x.active_count, x.total_count, x.total_size, x.reclaimable)).unwrap_or_default(),
+    })
+}
+
+/// Free space: unused images, the build cache, stopped containers, or volumes no container uses.
+pub async fn prune(host: HostId, remote: &RemoteProfile, what: crate::models::Prune) -> Result<String, String> {
+    use crate::models::Prune;
+    let docker = connect(host, remote).await?;
+    let freed: i64 = match what {
+        Prune::Images => {
+            let mut filters = std::collections::HashMap::new();
+            filters.insert("dangling".to_string(), vec!["false".to_string()]);
+            let opts = bollard::query_parameters::PruneImagesOptions { filters: Some(filters) };
+            docker.prune_images(Some(opts)).await.map_err(|e| e.to_string())?.space_reclaimed.unwrap_or(0)
+        }
+        Prune::BuildCache => {
+            docker.prune_build(None::<bollard::query_parameters::PruneBuildOptions>).await.map_err(|e| e.to_string())?.space_reclaimed.unwrap_or(0)
+        }
+        Prune::Containers => docker
+            .prune_containers(None::<bollard::query_parameters::PruneContainersOptions>)
+            .await
+            .map_err(|e| e.to_string())?
+            .space_reclaimed
+            .unwrap_or(0),
+        Prune::Volumes => docker
+            .prune_volumes(None::<bollard::query_parameters::PruneVolumesOptions>)
+            .await
+            .map_err(|e| e.to_string())?
+            .space_reclaimed
+            .unwrap_or(0),
+    };
+    Ok(format!("Freed {}", crate::models::format_bytes(freed.max(0) as u64)))
+}
+
 pub async fn host_memory(host: HostId, remote: &RemoteProfile) -> Result<Option<u64>, String> {
     let docker = connect(host, remote).await?;
     let info = docker.info().await.map_err(|e| e.to_string())?;

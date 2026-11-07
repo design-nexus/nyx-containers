@@ -908,6 +908,24 @@ pub async fn host_resources(
     Ok((mem_used, mem_total, disk_used, disk_total))
 }
 
+pub async fn storage_pools(host: HostId, remote: &RemoteProfile) -> Result<Vec<crate::models::PoolInfo>, String> {
+    let conn = connect(host, remote).await?;
+    let pools: Vec<Value> = call(&conn, Method::GET, "/1.0/storage-pools?recursion=1", None).await?;
+    let mut out = Vec::new();
+    for pool in pools {
+        let name = pool.get("name").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let driver = pool.get("driver").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let res: Value = call(&conn, Method::GET, &format!("/1.0/storage-pools/{}/resources", enc(&name)), None).await.unwrap_or(Value::Null);
+        out.push(crate::models::PoolInfo {
+            name,
+            driver,
+            used: res.pointer("/space/used").and_then(|v| v.as_u64()),
+            total: res.pointer("/space/total").and_then(|v| v.as_u64()),
+        });
+    }
+    Ok(out)
+}
+
 pub async fn storage_ready(host: HostId, remote: &RemoteProfile) -> bool {
     let Ok(conn) = connect(host, remote).await else { return false };
     let pools: Vec<Value> = call(&conn, Method::GET, "/1.0/storage-pools", None).await.unwrap_or_default();

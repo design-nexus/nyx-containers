@@ -848,3 +848,73 @@ window.containers-window button.create-image:checked {
   padding-top: 4px;
   padding-bottom: 4px;
 }
+
+/* ---------- Host page ---------- */
+
+.host-page {
+  padding: 8px 24px 32px 16px;
+}
+
+.host-card {
+  padding-bottom: 12px;
+}
+
+.host-ring {
+  color: @theme_accent;
+}
+
+.host-ring-value {
+  font-size: 15px;
+  font-weight: 600;
+  font-feature-settings: "tnum";
+}
+
+.host-ring-title {
+  font-weight: 500;
+}
+
+.host-ring-sub,
+.host-legend,
+.host-engine-sub {
+  font-size: 11.5px;
+  color: @theme_text_tertiary;
+}
+
+.host-chart {
+  color: @theme_accent;
+  margin: 4px 0 6px;
+}
+
+.host-engine-row,
+.host-pool,
+.host-check {
+  padding: 6px 0;
+}
+
+.host-engine-name {
+  font-weight: 500;
+}
+
+.host-check image.ok {
+  color: @theme_success;
+}
+
+.host-check image.warn {
+  color: @theme_warning;
+}
+
+levelbar.host-bar trough {
+  min-height: 5px;
+  border-radius: 3px;
+  background: @track;
+}
+
+levelbar.host-bar block.filled {
+  border-radius: 3px;
+  background: @theme_accent;
+}
+
+.host-cleanup .settings-option {
+  padding-left: 0;
+  padding-right: 0;
+}

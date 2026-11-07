@@ -30,6 +30,8 @@ pub enum Job {
     StartVga { host: HostId, name: String, seq: u64, socket: std::path::PathBuf },
     LoadConfig { host: HostId, name: String },
     SaveConfig { host: HostId, name: String, config: Box<crate::engines::incus::InstanceConfig> },
+    HostInfo { host: HostId },
+    Prune { host: HostId, what: crate::models::Prune },
     Diagnose,
     Fix(CheckId),
     CreateNet(Box<NetSpec>),
@@ -120,6 +122,20 @@ pub fn start() {
                                     } else {
                                         crate::tabs::hardware::apply_failed(host, &name);
                                     }
+                                });
+                            }
+                            Some(Job::HostInfo { host }) => {
+                                let remote = current_remote();
+                                let pools = crate::engines::incus::storage_pools(host, &remote).await.unwrap_or_default();
+                                let docker = crate::engines::docker::disk_usage(host, &remote).await.ok();
+                                let info = crate::models::HostInfo { host, pools, docker };
+                                on_main(move || crate::sections::host::apply_info(info));
+                            }
+                            Some(Job::Prune { host, what }) => {
+                                let result = crate::engines::docker::prune(host, &current_remote(), what).await;
+                                on_main(move || {
+                                    crate::window::apply_op(result);
+                                    host_info(host);
                                 });
                             }
                             Some(Job::Diagnose) => diagnose_now().await,
@@ -249,6 +265,14 @@ pub fn load_config(host: HostId, name: impl Into<String>) {
 
 pub fn save_config(host: HostId, name: impl Into<String>, config: crate::engines::incus::InstanceConfig) {
     send(Job::SaveConfig { host, name: name.into(), config: Box::new(config) });
+}
+
+pub fn host_info(host: HostId) {
+    send(Job::HostInfo { host });
+}
+
+pub fn prune(host: HostId, what: crate::models::Prune) {
+    send(Job::Prune { host, what });
 }
 
 pub fn diagnose() {

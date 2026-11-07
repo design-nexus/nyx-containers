@@ -466,18 +466,26 @@ pub fn navigate(id: &str) {
         other => other,
     };
     let Some(ui) = ui() else { return };
+    let missing = {
+        let u = ui.borrow();
+        if u.pages.contains_key(id) { None } else { u.sections.iter().find(|s| s.id == id).cloned().map(Some).unwrap_or(None) }
+    };
+    if !ui.borrow().pages.contains_key(id) && missing.is_none() {
+        return;
+    }
+    // Build with nothing borrowed: a page may read the window's state while it builds.
+    if let Some(section) = missing {
+        let page = widgets::page(section.id);
+        if section.fill {
+            page.fill();
+        }
+        (section.build)(&page);
+        let mut u = ui.borrow_mut();
+        u.home.add_named(&page.root, Some(section.id));
+        u.pages.insert(id.to_string(), page.root.clone().upcast());
+    }
     {
         let mut u = ui.borrow_mut();
-        if !u.pages.contains_key(id) {
-            let Some(section) = u.sections.iter().find(|s| s.id == id).cloned() else { return };
-            let page = widgets::page(section.id);
-            if section.fill {
-                page.fill();
-            }
-            (section.build)(&page);
-            u.home.add_named(&page.root, Some(section.id));
-            u.pages.insert(id.to_string(), page.root.clone().upcast());
-        }
         u.home.set_visible_child_name(id);
         u.current = id.to_string();
         if id != "connections" {
@@ -571,14 +579,17 @@ fn close_tab(index: usize) {
     if index == 0 {
         return;
     }
-    {
+    let key = {
         let mut u = ui.borrow_mut();
         if index > u.tabs.len() {
             return;
         }
-        let tab = u.tabs.remove(index - 1);
-        tabs::closed(&tab.key);
-        if let Some(child) = u.main.child_by_name(&tab.key) {
+        u.tabs.remove(index - 1).key
+    };
+    tabs::closed(&key);
+    {
+        let mut u = ui.borrow_mut();
+        if let Some(child) = u.main.child_by_name(&key) {
             u.main.remove(&child);
         }
         if u.active == index {

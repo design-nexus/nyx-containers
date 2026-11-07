@@ -596,6 +596,46 @@ pub enum SnapAction {
 
 pub const HEALTH_POINTS: usize = 60;
 
+/// One kind of Docker disk use: how many, how many in use, total and reclaimable bytes.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Usage {
+    pub count: u64,
+    pub active: u64,
+    pub total: u64,
+    pub reclaimable: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DockerUsage {
+    pub images: Usage,
+    pub containers: Usage,
+    pub volumes: Usage,
+    pub build_cache: Usage,
+}
+
+#[derive(Debug, Clone)]
+pub struct PoolInfo {
+    pub name: String,
+    pub driver: String,
+    pub used: Option<u64>,
+    pub total: Option<u64>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct HostInfo {
+    pub host: HostId,
+    pub pools: Vec<PoolInfo>,
+    pub docker: Option<DockerUsage>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Prune {
+    Images,
+    BuildCache,
+    Containers,
+    Volumes,
+}
+
 #[derive(Debug, Clone)]
 pub struct HostHealth {
     pub host: HostId,
