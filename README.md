@@ -1,22 +1,37 @@
 # Nyx Containers
 
-A native GTK4 app for managing Incus and Docker on this computer and one remote
-server. No agent, no web UI.
+A native GTK4 app for your VMs, Linux containers and Docker on this computer and
+one remote server: Proxmox's settings and VMware Workstation's tabs, for a
+desktop rather than a datacenter. No agent, no web UI.
 
 ## Features
 
-- **Overview** — host dashboard: engine chips, CPU / memory / engine disk /
-  guest tiles with sparklines, running list.
-- **Containers and VMs** — start, stop, restart, delete, inspect, logs, terminal.
-- **Stacks** — Docker Compose projects from `com.docker.compose.project` labels.
-  Up, Down, Restart, combined logs.
-- **Images** — list, pull, inspect, remove.
-- **Networks** — Docker and Incus bridges. Create and remove. Docker builtins
-  and unmanaged Incus physical nets stay put.
-- **Storage** — Docker volumes and Incus pool volumes. Create a named volume or
-  an Incus custom volume. Restore-safe delete of custom volumes only.
-- **Snapshots** — Incus instance snapshots on the details dialog: create, delete,
-  restore.
+- **Overview** — every VM, LXC container, Docker container and Compose stack as
+  a short card: status, address and ports (click one to open it), uptime and
+  snapshots, live CPU and memory graphs, and Web UI, Display, Terminal, Logs,
+  Power and ⋯ buttons. Filter by kind or state, sort, pin to the top. A host
+  strip shows CPU, memory, disk and engines.
+- **Tabs** — open any workload or stack in a tab (Ctrl+Tab, Ctrl+W, Ctrl+1…9).
+- **VM display** — the VM's screen inside its tab over SPICE: keyboard and
+  mouse (click to capture, Ctrl+Alt releases), fit or actual size, resize the
+  guest when its agent runs, Ctrl+Alt+Del and other keys, type the clipboard,
+  screenshots, sound, fullscreen with a floating bar.
+- **Terminal and Logs** — a shell in any running workload, the boot console for
+  Incus guests; logs to filter, follow, wrap and save.
+- **Hardware and Options** (Incus) — cores, pinning, CPU limit and priority,
+  memory, root disk size, shared folders, ISO images, volumes, network cards,
+  port forwards, USB devices, GPUs and a TPM; autostart and boot order, Secure
+  Boot or nesting, scheduled snapshots, the card's web UI address, and the raw
+  config as YAML. Changes are a draft until Apply.
+- **Snapshots** — take, restore and delete; scheduled ones from Options.
+- **Docker** — Inspect (environment with secrets hidden, mounts, networks,
+  labels, raw JSON); stacks with Services, a Compose editor (Validate, Pull,
+  Deploy) and combined logs.
+- **New workload** — a VM or container from the Incus image server, a VM from
+  an ISO, a Docker container with ports, folders and environment, or a stack.
+- **Hosts** — this computer and the remote: usage, engines, VM feature checks
+  (KVM, nesting, IOMMU, virtiofs, TPM, UEFI), storage pools, Docker cleanup.
+- **Images, Storage, Networks** — list, pull, create and remove.
 - **Connections** — local engines plus one remote. Docker over SSH, Incus over
   HTTPS. SSH host key and TLS pin required before traffic.
 - **Diagnostics** — Settings card with Fix (pkexec) or Copy for missing
@@ -62,13 +77,18 @@ cargo run -p nyx-containers
 nyx-containers --section overview
 ```
 
-`--section` accepts `overview`, `containers`, `vms`, `stacks`, `images`,
-`networks`, `storage`, `connections`.
+`--section` accepts `overview`, `vms`, `lxc`, `docker`, `stacks`, `images`,
+`storage`, `networks`, `host`, `homelab`, `connections`. `--open NAME` opens a
+workload or stack in a tab (with `--view display`, `terminal`, `logs`,
+`snapshots`, `hardware`, `options` or `compose`); `--new` opens New workload.
 
-## Limits (v1.0)
+## Limits
 
 - One remote profile.
-- Compose from running container labels, not a YAML editor.
-- No Kubernetes, clusters, extra remotes, agents, or web dashboard.
+- No USB redirection over SPICE yet, and no host↔guest clipboard sync: paste
+  into a VM types the text instead. Guest resizing needs spice-vdagent.
+- Compose deploys run on this computer; remote stacks can be viewed and
+  started or stopped.
+- No Kubernetes, clusters, HA, users and permissions, or web dashboard.
 
 Suite registration and a public GitHub repo stay off until you ask.

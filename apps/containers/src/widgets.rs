@@ -81,38 +81,6 @@ pub fn confirm(title: &str, body: &str, action: &str, on_ok: impl Fn() + 'static
     dialog.present();
 }
 
-pub fn sparkline(points: &[f64]) -> gtk::DrawingArea {
-    let area = gtk::DrawingArea::new();
-    area.set_content_height(36);
-    area.set_hexpand(true);
-    area.add_css_class("sparkline");
-    let pts = points.to_vec();
-    area.set_draw_func(move |_, cr, w, h| {
-        if w <= 0 || h <= 0 {
-            return;
-        }
-        let pal = crate::theme::palette();
-        let color = gtk::gdk::RGBA::parse(&pal.accent).unwrap_or(gtk::gdk::RGBA::new(0.4, 0.6, 1.0, 1.0));
-        let danger = gtk::gdk::RGBA::parse(&pal.danger).unwrap_or(gtk::gdk::RGBA::new(0.9, 0.3, 0.3, 1.0));
-        let last = pts.last().copied().unwrap_or(0.0);
-        let c = if last >= 0.9 { danger } else { color };
-        cr.set_source_rgba(c.red() as f64, c.green() as f64, c.blue() as f64, 0.9);
-        if pts.len() < 2 {
-            return;
-        }
-        let n = (pts.len() - 1) as f64;
-        cr.set_line_width(1.5);
-        cr.move_to(0.0, h as f64 - pts[0].clamp(0.0, 1.0) * (h as f64 - 2.0) - 1.0);
-        for (i, v) in pts.iter().enumerate().skip(1) {
-            let x = i as f64 / n * w as f64;
-            let y = h as f64 - v.clamp(0.0, 1.0) * (h as f64 - 2.0) - 1.0;
-            cr.line_to(x, y);
-        }
-        let _ = cr.stroke();
-    });
-    area
-}
-
 #[derive(Clone, Copy)]
 pub struct Col {
     pub key: &'static str,
@@ -193,9 +161,6 @@ impl OpsTable {
         self.header.set_visible(n > 0);
     }
 
-    pub fn listbox(&self) -> gtk::ListBox {
-        self.list.clone()
-    }
 }
 
 impl Clone for OpsTable {
@@ -342,12 +307,6 @@ fn build_source_scheme(palette: &crate::theme::Palette) -> Option<sourceview5::S
     manager.scheme("nyx-containers-yaml")
 }
 
-pub fn status_pill(text: &str, kind: &str) -> gtk::Label {
-    let l = tag(text, kind);
-    l.add_css_class("ops-pill");
-    l
-}
-
 pub fn td(text: &str) -> gtk::Widget {
     label(text, "").upcast()
 }
@@ -361,21 +320,6 @@ pub fn actions_cell() -> gtk::Box {
     b.add_css_class("ops-actions");
     b.set_halign(gtk::Align::End);
     b
-}
-
-pub fn kv_line(key: &str, value: &str) -> gtk::Box {
-    let row = hbox(8);
-    row.add_css_class("ops-kv");
-    let k = label(key, "ops-kv-key");
-    k.set_xalign(0.0);
-    let v = label(value, "");
-    v.set_xalign(0.0);
-    v.set_hexpand(true);
-    v.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    v.set_selectable(true);
-    row.append(&k);
-    row.append(&v);
-    row
 }
 
 pub fn set_count(label: &gtk::Label, n: usize, noun: &str) {

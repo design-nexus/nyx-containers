@@ -2,7 +2,7 @@
 
 use crate::engines::{docker, incus};
 use crate::models::{
-    Action, CreateSpec, Engine, HostId, ImageDetail, InstanceSnap, LogChunk, NetSpec, ResourceSample, SnapAction, TermEvent,
+    Action, CreateSpec, Engine, HostId, ImageDetail, InstanceSnap, LogChunk, NetSpec, SnapAction, TermEvent,
     TermKind, VolumeSpec, WorkloadDetail,
 };
 use crate::prefs::RemoteProfile;
@@ -26,13 +26,6 @@ pub async fn inspect(remote: &RemoteProfile, host: HostId, engine: Engine, name:
     match engine {
         Engine::Docker => docker::inspect(host, remote, name).await,
         Engine::Incus => incus::inspect(host, remote, name).await,
-    }
-}
-
-pub async fn stats(remote: &RemoteProfile, host: HostId, engine: Engine, name: &str, seq: u64) -> Result<ResourceSample, String> {
-    match engine {
-        Engine::Docker => docker::stats(host, remote, name, seq).await,
-        Engine::Incus => incus::stats(host, remote, name, seq).await,
     }
 }
 

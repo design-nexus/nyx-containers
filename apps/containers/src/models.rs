@@ -418,13 +418,6 @@ pub fn format_bytes(n: u64) -> String {
     }
 }
 
-pub fn format_cpu(cpu: Option<f64>) -> String {
-    match cpu {
-        Some(v) => format!("{v:.1}%"),
-        None => "—".into(),
-    }
-}
-
 pub fn format_memory(used: Option<u64>, limit: Option<u64>) -> String {
     match (used, limit) {
         (Some(u), Some(l)) if l > 0 => format!("{} / {}", format_bytes(u), format_bytes(l)),

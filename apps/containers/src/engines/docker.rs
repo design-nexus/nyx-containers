@@ -466,11 +466,6 @@ pub async fn inspect_raw(host: HostId, remote: &RemoteProfile, id: &str) -> Resu
     serde_json::to_value(info).map_err(|e| e.to_string())
 }
 
-pub async fn stats(host: HostId, remote: &RemoteProfile, name: &str, seq: u64) -> Result<ResourceSample, String> {
-    let docker = connect(host, remote).await?;
-    stats_on(&docker, host, name, seq).await
-}
-
 async fn stats_on(docker: &Docker, host: HostId, name: &str, seq: u64) -> Result<ResourceSample, String> {
     let opts = StatsOptionsBuilder::default().stream(false).build();
     let mut stream = docker.stats(name, Some(opts));

@@ -817,11 +817,6 @@ pub async fn save_instance(
     Ok(format!("Saved {name}'s settings"))
 }
 
-pub async fn stats(host: HostId, remote: &RemoteProfile, name: &str, seq: u64) -> Result<ResourceSample, String> {
-    let conn = connect(host, remote).await?;
-    stats_on(&conn, host, name, seq).await
-}
-
 async fn stats_on(conn: &Conn, host: HostId, name: &str, seq: u64) -> Result<ResourceSample, String> {
     let s1: IncusState = call(conn, Method::GET, &format!("/1.0/instances/{}/state", enc(name)), None).await?;
     tokio::time::sleep(Duration::from_millis(400)).await;

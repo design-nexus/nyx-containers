@@ -4,7 +4,7 @@
 //! you open gets a tab of its own, VMware Workstation style.
 
 use crate::models::{
-    DiagReport, HostFilter, HostHealth, HostId, ImageDetail, InstanceSnap, LiveSample, LogChunk, ResourceSample, Snapshot,
+    DiagReport, HostFilter, HostHealth, HostId, ImageDetail, InstanceSnap, LiveSample, LogChunk, Snapshot,
     WorkloadDetail,
 };
 use crate::sections::{self, Section};
@@ -753,8 +753,6 @@ pub fn apply_detail(result: Result<WorkloadDetail, String>) {
         Err(err) => toast(&err),
     }
 }
-
-pub fn apply_stats(_result: Result<ResourceSample, String>) {}
 
 pub fn apply_image_detail(result: Result<ImageDetail, String>) {
     match result {

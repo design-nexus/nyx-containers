@@ -13,7 +13,6 @@ pub enum Job {
     TestRemote(Box<RemoteProfile>),
     Operate { host: HostId, engine: Engine, name: String, action: Action },
     Inspect { host: HostId, engine: Engine, name: String },
-    Stats { host: HostId, engine: Engine, name: String, seq: u64 },
     Create(Box<CreateSpec>),
     PullImage { host: HostId, engine: Engine, reference: String },
     InspectImage { host: HostId, engine: Engine, id: String },
@@ -79,7 +78,6 @@ pub fn start() {
                             Some(Job::TestRemote(profile)) => test_now(*profile).await,
                             Some(Job::Operate { host, engine, name, action }) => operate_now(host, engine, name, action).await,
                             Some(Job::Inspect { host, engine, name }) => inspect_now(host, engine, name).await,
-                            Some(Job::Stats { host, engine, name, seq }) => stats_now(host, engine, name, seq).await,
                             Some(Job::Create(spec)) => create_now(*spec).await,
                             Some(Job::PullImage { host, engine, reference }) => pull_now(host, engine, reference).await,
                             Some(Job::InspectImage { host, engine, id }) => inspect_image_now(host, engine, id).await,
@@ -197,10 +195,6 @@ pub fn operate(host: HostId, engine: Engine, name: impl Into<String>, action: Ac
 
 pub fn inspect(host: HostId, engine: Engine, name: impl Into<String>) {
     send(Job::Inspect { host, engine, name: name.into() });
-}
-
-pub fn stats(host: HostId, engine: Engine, name: impl Into<String>, seq: u64) {
-    send(Job::Stats { host, engine, name: name.into(), seq });
 }
 
 pub fn create(spec: CreateSpec) {
@@ -354,12 +348,6 @@ async fn inspect_now(host: HostId, engine: Engine, name: String) {
     let remote = current_remote();
     let result = ops::inspect(&remote, host, engine, &name).await;
     on_main(move || crate::window::apply_detail(result));
-}
-
-async fn stats_now(host: HostId, engine: Engine, name: String, seq: u64) {
-    let remote = current_remote();
-    let result = ops::stats(&remote, host, engine, &name, seq).await;
-    on_main(move || crate::window::apply_stats(result));
 }
 
 async fn create_now(spec: CreateSpec) {
