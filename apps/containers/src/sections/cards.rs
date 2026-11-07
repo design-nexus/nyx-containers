@@ -58,6 +58,7 @@ impl Meter {
         let value = widgets::label("—", "wl-meter-value");
         value.set_hexpand(true);
         value.set_xalign(1.0);
+        value.set_ellipsize(gtk::pango::EllipsizeMode::Start);
         top.append(&value);
         root.append(&top);
         let area = gtk::DrawingArea::new();
@@ -268,6 +269,10 @@ fn build(page: &Page, scope: Scope) {
     let strip = (scope == Scope::All).then(HostStrip::new);
     if let Some(s) = &strip {
         page.body.append(&s.root);
+        if window::is_narrow() {
+            s.engines.set_visible(false);
+            s.guests.root.set_visible(false);
+        }
     }
     let tools = widgets::hbox(6);
     tools.add_css_class("cards-tools");
@@ -425,6 +430,10 @@ pub fn apply_live() {
 
 pub fn set_narrow(narrow: bool) {
     for ui in PAGES.with(|p| p.borrow().clone()) {
+        if let Some(strip) = &ui.strip {
+            strip.engines.set_visible(!narrow);
+            strip.guests.root.set_visible(!narrow);
+        }
         if narrow {
             ui.list.add_css_class("narrow");
         } else {

@@ -155,7 +155,36 @@ pub fn build_hardware(w: &Workload) -> (gtk::Widget, Rc<Editor>) {
     right.append(&footer(&e));
     root.append(&right);
     e.repaint();
+    LAYOUTS.with(|l| l.borrow_mut().push((root.downgrade(), left.downgrade(), scroll.downgrade())));
+    lay_out(&root, &left, &scroll, window::is_narrow());
     (root.upcast(), e)
+}
+
+thread_local! {
+    static LAYOUTS: RefCell<Vec<(gtk::glib::WeakRef<gtk::Box>, gtk::glib::WeakRef<gtk::Box>, gtk::glib::WeakRef<gtk::ScrolledWindow>)>> =
+        const { RefCell::new(Vec::new()) };
+}
+
+/// Side by side when there's room; the device list above the form in a narrow window.
+fn lay_out(root: &gtk::Box, left: &gtk::Box, scroll: &gtk::ScrolledWindow, narrow: bool) {
+    root.set_orientation(if narrow { gtk::Orientation::Vertical } else { gtk::Orientation::Horizontal });
+    left.set_size_request(if narrow { -1 } else { 400 }, -1);
+    left.set_vexpand(!narrow);
+    scroll.set_vexpand(!narrow);
+    scroll.set_propagate_natural_height(narrow);
+    scroll.set_max_content_height(if narrow { 240 } else { -1 });
+}
+
+pub fn set_narrow(narrow: bool) {
+    LAYOUTS.with(|l| {
+        l.borrow_mut().retain(|(r, le, sc)| match (r.upgrade(), le.upgrade(), sc.upgrade()) {
+            (Some(r), Some(le), Some(sc)) => {
+                lay_out(&r, &le, &sc, narrow);
+                true
+            }
+            _ => false,
+        })
+    });
 }
 
 pub fn build_options(w: &Workload) -> (gtk::Widget, Rc<Editor>) {

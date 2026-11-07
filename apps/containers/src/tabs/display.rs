@@ -171,6 +171,7 @@ impl Display {
         well.add_overlay(&fs_bar);
 
         let stage = gtk::Stack::new();
+        stage.set_hhomogeneous(false);
         stage.set_vexpand(true);
         let message = widgets::vbox(8);
         message.add_css_class("empty-state");

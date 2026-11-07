@@ -99,6 +99,21 @@ struct TabUi {
     snaps: RefCell<Option<gtk::Box>>,
     display: RefCell<Option<Rc<display::Display>>>,
     editor: RefCell<Option<Rc<hardware::Editor>>>,
+    seg: gtk::Box,
+    pick: gtk::Button,
+    pick_label: gtk::Label,
+}
+
+fn apply_narrow(ui: &TabUi, narrow: bool) {
+    ui.seg.set_visible(!narrow);
+    ui.pick.set_visible(narrow);
+}
+
+pub fn set_narrow(narrow: bool) {
+    for ui in TABS.with(|t| t.borrow().values().cloned().collect::<Vec<_>>()) {
+        apply_narrow(&ui, narrow);
+    }
+    hardware::set_narrow(narrow);
 }
 
 thread_local! {
@@ -141,6 +156,17 @@ pub fn build(target: &Target, snap: &Snapshot) -> gtk::Widget {
     seg.add_css_class("tab-views");
     seg.set_valign(gtk::Align::Center);
     bar.append(&seg);
+    // In a narrow window the views are a menu instead of a row of segments.
+    let pick = gtk::Button::new();
+    pick.add_css_class("tab-view-pick");
+    let pick_box = widgets::hbox(6);
+    let pick_label = widgets::label("", "");
+    pick_box.append(&pick_label);
+    pick_box.append(&gtk::Image::from_icon_name("pan-down-symbolic"));
+    pick.set_child(Some(&pick_box));
+    pick.set_valign(gtk::Align::Center);
+    pick.set_visible(false);
+    bar.append(&pick);
     let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     spacer.set_hexpand(true);
     bar.append(&spacer);
@@ -149,6 +175,7 @@ pub fn build(target: &Target, snap: &Snapshot) -> gtk::Widget {
     bar.append(&acts);
     root.append(&bar);
     let views = gtk::Stack::new();
+    views.set_hhomogeneous(false);
     views.set_vexpand(true);
     views.set_hexpand(true);
     views.set_transition_type(gtk::StackTransitionType::Crossfade);
@@ -170,6 +197,23 @@ pub fn build(target: &Target, snap: &Snapshot) -> gtk::Widget {
         snaps: RefCell::new(None),
         display: RefCell::new(None),
         editor: RefCell::new(None),
+        seg: seg.clone(),
+        pick: pick.clone(),
+        pick_label,
+    });
+    let w = Rc::downgrade(&ui);
+    pick.connect_clicked(move |b| {
+        let Some(ui) = w.upgrade() else { return };
+        let entries = ui
+            .nav
+            .borrow()
+            .iter()
+            .map(|(id, button)| {
+                let (button, title) = (button.clone(), button.label().map(|l| l.to_string()).unwrap_or_else(|| id.clone()));
+                nyx_ui::menu::check(&title, button.is_active(), move |_| button.set_active(true))
+            })
+            .collect();
+        nyx_ui::menu::popup_below(b, entries);
     });
     let mut first: Option<gtk::ToggleButton> = None;
     let mut nav = Vec::new();
@@ -194,6 +238,7 @@ pub fn build(target: &Target, snap: &Snapshot) -> gtk::Widget {
     }
     *ui.nav.borrow_mut() = nav;
     TABS.with(|t| t.borrow_mut().insert(target.key(), ui.clone()));
+    apply_narrow(&ui, window::is_narrow());
     update(&ui, snap);
     if let Some((id, b)) = ui.nav.borrow().first() {
         let _ = id;
@@ -385,6 +430,9 @@ fn show(ui: &Rc<TabUi>, view: &str) {
         ui.built.borrow_mut().insert(view.to_string());
     }
     ui.views.set_visible_child_name(view);
+    if let Some((_, b)) = ui.nav.borrow().iter().find(|(id, _)| id == view) {
+        ui.pick_label.set_text(&b.label().map(|l| l.to_string()).unwrap_or_default());
+    }
 }
 
 fn build_view(ui: &Rc<TabUi>, view: &str) -> gtk::Widget {

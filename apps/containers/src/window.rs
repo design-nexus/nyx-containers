@@ -177,12 +177,14 @@ fn build(app: &gtk::Application) {
     sidebar.set_collapsed(prefs::get().sidebar_collapsed);
 
     let home = gtk::Stack::new();
+    home.set_hhomogeneous(false);
     home.set_hexpand(true);
     home.set_vexpand(true);
     home.set_transition_type(gtk::StackTransitionType::Crossfade);
     home.set_transition_duration(if prefs::get().reduce_motion { 0 } else { 160 });
 
     let main = gtk::Stack::new();
+    main.set_hhomogeneous(false);
     main.add_css_class("ops-stack");
     main.set_hexpand(true);
     main.set_vexpand(true);
@@ -247,6 +249,7 @@ fn build(app: &gtk::Application) {
             if narrow != NARROW.with(|n| n.get()) {
                 NARROW.with(|n| n.set(narrow));
                 crate::sections::cards::set_narrow(narrow);
+                crate::tabs::set_narrow(narrow);
                 glib::idle_add_local_once(repaint);
                 if let Some(ui) = ui() {
                     ui.borrow().search.set_width_chars(if narrow { 14 } else { 30 });
@@ -256,6 +259,37 @@ fn build(app: &gtk::Application) {
         }
         glib::ControlFlow::Continue
     });
+
+    if std::env::var_os("NYX_CONTAINERS_PROFILE").is_some() {
+        // Which part of the window sets its minimum width (it must fit a half-screen tile).
+        let parts: Vec<(&str, gtk::Widget)> = vec![
+            ("window", window.clone().upcast()),
+            ("header", header.root.clone().upcast()),
+            ("header.center", header.center.clone().upcast()),
+            ("header.end", header.end.clone().upcast()),
+            ("sidebar", sidebar.root.clone().upcast()),
+            ("tabs", tab_row.root.clone().upcast()),
+            ("main", main.clone().upcast()),
+        ];
+        glib::timeout_add_seconds_local(6, move || {
+            for (name, w) in &parts {
+                eprintln!("nyx-containers: min width {name} = {}", w.measure(gtk::Orientation::Horizontal, -1).0);
+            }
+            let mut child = parts[6].1.first_child();
+            while let Some(c) = child {
+                eprintln!("nyx-containers: min width main/{} = {}", c.widget_name(), c.measure(gtk::Orientation::Horizontal, -1).0);
+                if let Some(inner) = c.first_child() {
+                    let mut g = Some(inner);
+                    while let Some(x) = g {
+                        eprintln!("nyx-containers:   {} = {}", x.css_classes().join("."), x.measure(gtk::Orientation::Horizontal, -1).0);
+                        g = x.next_sibling();
+                    }
+                }
+                child = c.next_sibling();
+            }
+            glib::ControlFlow::Break
+        });
+    }
 
     let ui = Ui {
         window,
@@ -866,7 +900,9 @@ pub fn overlay_card(title: &str, width: i32) -> (gtk::Box, Rc<dyn Fn()>) {
     card.set_halign(gtk::Align::Center);
     card.set_valign(gtk::Align::Center);
     card.set_vexpand(true);
-    card.set_size_request(width, -1);
+    // Never wider than the window allows, so a half-screen tile still fits it.
+    let room = self::window().map(|w| w.width()).filter(|w| *w > 0).unwrap_or(width + 48);
+    card.set_size_request(width.min(room - 48).max(320), -1);
     let head = widgets::hbox(8);
     let t = widgets::label(title, "overlay-card-title");
     t.set_hexpand(true);
