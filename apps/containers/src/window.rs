@@ -146,6 +146,9 @@ fn build(app: &gtk::Application) {
                     }),
                     _ => nyx_ui::sidebar::group_label(s.group, first),
                 };
+                if let Some(heading) = label.first_child() {
+                    heading.add_css_class(&format!("section-{}", s.group.to_ascii_lowercase()));
+                }
                 sidebar.append(&label);
             }
             last_group = s.group;
