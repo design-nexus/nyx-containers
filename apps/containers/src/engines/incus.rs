@@ -726,6 +726,63 @@ pub async fn inspect(host: HostId, remote: &RemoteProfile, name: &str) -> Result
     Ok(detail)
 }
 
+/// An instance's own config and devices, and what its profiles add.
+#[derive(Debug, Clone, Default)]
+pub struct InstanceConfig {
+    pub config: std::collections::BTreeMap<String, String>,
+    pub devices: std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
+    pub expanded_config: std::collections::BTreeMap<String, String>,
+    pub expanded_devices: std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
+    pub profiles: Vec<String>,
+    pub vm: bool,
+    pub running: bool,
+}
+
+pub async fn instance_config(host: HostId, remote: &RemoteProfile, name: &str) -> Result<InstanceConfig, String> {
+    let conn = connect(host, remote).await?;
+    let raw: Value = call(&conn, Method::GET, &format!("/1.0/instances/{}", enc(name)), None).await?;
+    let map = |v: Option<&Value>| -> std::collections::BTreeMap<String, String> {
+        v.and_then(|v| v.as_object())
+            .map(|o| o.iter().map(|(k, v)| (k.clone(), v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string()))).collect())
+            .unwrap_or_default()
+    };
+    let devs = |v: Option<&Value>| -> std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>> {
+        v.and_then(|v| v.as_object()).map(|o| o.iter().map(|(k, v)| (k.clone(), map(Some(v)))).collect()).unwrap_or_default()
+    };
+    Ok(InstanceConfig {
+        config: map(raw.get("config")),
+        devices: devs(raw.get("devices")),
+        expanded_config: map(raw.get("expanded_config")),
+        expanded_devices: devs(raw.get("expanded_devices")),
+        profiles: raw.get("profiles").and_then(|p| p.as_array()).map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default(),
+        vm: raw.get("type").and_then(|t| t.as_str()).is_some_and(|t| t.contains("virtual")),
+        running: raw.get("status").and_then(|t| t.as_str()).is_some_and(|t| t == "Running"),
+    })
+}
+
+/// Replace an instance's own config and devices (a full PUT, so removed devices go).
+pub async fn save_instance(
+    host: HostId,
+    remote: &RemoteProfile,
+    name: &str,
+    config: std::collections::BTreeMap<String, String>,
+    devices: std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
+) -> Result<String, String> {
+    let conn = connect(host, remote).await?;
+    let path = format!("/1.0/instances/{}", enc(name));
+    let raw: Value = call(&conn, Method::GET, &path, None).await?;
+    let mut body = serde_json::Map::new();
+    for key in ["architecture", "description", "ephemeral", "profiles", "stateful"] {
+        if let Some(v) = raw.get(key) {
+            body.insert(key.into(), v.clone());
+        }
+    }
+    body.insert("config".into(), json!(config));
+    body.insert("devices".into(), json!(devices));
+    let _: Value = call(&conn, Method::PUT, &path, Some(Value::Object(body))).await?;
+    Ok(format!("Saved {name}'s settings"))
+}
+
 pub async fn stats(host: HostId, remote: &RemoteProfile, name: &str, seq: u64) -> Result<ResourceSample, String> {
     let conn = connect(host, remote).await?;
     stats_on(&conn, host, name, seq).await

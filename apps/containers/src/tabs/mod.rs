@@ -4,6 +4,7 @@
 //! terminals and log streams stop when it closes.
 
 pub mod display;
+pub mod hardware;
 
 use crate::history;
 use crate::models::{Engine, HostId, InstanceSnap, Kind, RunState, SnapAction, Snapshot, Stack, TermKind, Workload, WorkloadDetail};
@@ -96,6 +97,7 @@ struct TabUi {
     summary: RefCell<Option<SummaryUi>>,
     snaps: RefCell<Option<gtk::Box>>,
     display: RefCell<Option<Rc<display::Display>>>,
+    editor: RefCell<Option<Rc<hardware::Editor>>>,
 }
 
 thread_local! {
@@ -112,10 +114,17 @@ fn views_for(target: &Target, snap: &Snapshot) -> Vec<(&'static str, &'static st
                 ("terminal", "Terminal"),
                 ("logs", "Logs"),
                 ("snapshots", "Snapshots"),
+                ("hardware", "Hardware"),
+                ("options", "Options"),
             ],
-            Some((Engine::Incus, _)) => {
-                vec![("summary", "Summary"), ("terminal", "Terminal"), ("logs", "Logs"), ("snapshots", "Snapshots")]
-            }
+            Some((Engine::Incus, _)) => vec![
+                ("summary", "Summary"),
+                ("terminal", "Terminal"),
+                ("logs", "Logs"),
+                ("snapshots", "Snapshots"),
+                ("hardware", "Hardware"),
+                ("options", "Options"),
+            ],
             _ => vec![("summary", "Summary"), ("logs", "Logs"), ("terminal", "Terminal")],
         },
     }
@@ -159,6 +168,7 @@ pub fn build(target: &Target, snap: &Snapshot) -> gtk::Widget {
         summary: RefCell::new(None),
         snaps: RefCell::new(None),
         display: RefCell::new(None),
+        editor: RefCell::new(None),
     });
     let mut first: Option<gtk::ToggleButton> = None;
     let mut nav = Vec::new();
@@ -449,6 +459,22 @@ fn build_view(ui: &Rc<TabUi>, view: &str) -> gtk::Widget {
                 let d = display::Display::new(&w);
                 let widget = d.root.clone().upcast::<gtk::Widget>();
                 *ui.display.borrow_mut() = Some(d);
+                widget
+            }
+            None => gone(),
+        },
+        ("hardware", _) => match w {
+            Some(w) => {
+                let (widget, editor) = hardware::build_hardware(&w);
+                *ui.editor.borrow_mut() = Some(editor);
+                widget
+            }
+            None => gone(),
+        },
+        ("options", _) => match w {
+            Some(w) => {
+                let (widget, editor) = hardware::build_options(&w);
+                *ui.editor.borrow_mut() = Some(editor);
                 widget
             }
             None => gone(),

@@ -28,6 +28,8 @@ pub enum Job {
     TermResize { seq: u64, cols: u16, rows: u16 },
     StopTerm { seq: u64 },
     StartVga { host: HostId, name: String, seq: u64, socket: std::path::PathBuf },
+    LoadConfig { host: HostId, name: String },
+    SaveConfig { host: HostId, name: String, config: Box<crate::engines::incus::InstanceConfig> },
     Diagnose,
     Fix(CheckId),
     CreateNet(Box<NetSpec>),
@@ -100,6 +102,25 @@ pub fn start() {
                             Some(Job::StopTerm { seq }) => {
                                 send_term(&live, seq, TermEvent::Close);
                                 stop_watch(&live, seq, false);
+                            }
+                            Some(Job::LoadConfig { host, name }) => {
+                                let result = crate::engines::incus::instance_config(host, &current_remote(), &name).await;
+                                on_main(move || crate::tabs::hardware::apply_config(host, &name, result));
+                            }
+                            Some(Job::SaveConfig { host, name, config }) => {
+                                let remote = current_remote();
+                                let c = *config;
+                                let result = crate::engines::incus::save_instance(host, &remote, &name, c.config, c.devices).await;
+                                let ok = result.is_ok();
+                                on_main(move || crate::window::apply_op(result));
+                                let reload = crate::engines::incus::instance_config(host, &remote, &name).await;
+                                on_main(move || {
+                                    if ok {
+                                        crate::tabs::hardware::apply_config(host, &name, reload);
+                                    } else {
+                                        crate::tabs::hardware::apply_failed(host, &name);
+                                    }
+                                });
                             }
                             Some(Job::Diagnose) => diagnose_now().await,
                             Some(Job::Fix(id)) => fix_now(id).await,
@@ -220,6 +241,14 @@ pub fn stop_term(seq: u64) {
 
 pub fn shutdown() {
     send(Job::Shutdown);
+}
+
+pub fn load_config(host: HostId, name: impl Into<String>) {
+    send(Job::LoadConfig { host, name: name.into() });
+}
+
+pub fn save_config(host: HostId, name: impl Into<String>, config: crate::engines::incus::InstanceConfig) {
+    send(Job::SaveConfig { host, name: name.into(), config: Box::new(config) });
 }
 
 pub fn diagnose() {

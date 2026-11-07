@@ -18,6 +18,11 @@ thread_local! {
     static HEALTH: RefCell<Vec<HostHealth>> = const { RefCell::new(Vec::new()) };
 }
 
+/// This computer's memory, from the last sample.
+pub fn host_memory() -> Option<u64> {
+    HEALTH.with(|h| h.borrow().iter().find(|x| x.host == HostId::Local).and_then(|x| x.mem_total))
+}
+
 pub fn build_local(page: &Page) {
     build(page, HostId::Local);
 }
