@@ -17,20 +17,20 @@ enum What {
 }
 
 /// Images on the public Incus image server: (alias, name, note, colour, letter).
-const IMAGES: &[(&str, &str, &str, &str, &str)] = &[
-    ("ubuntu/24.04/desktop", "Ubuntu Desktop", "24.04 with GNOME · VM", "#e95420", "U"),
-    ("ubuntu/24.04", "Ubuntu 24.04 LTS", "Long-term support", "#e95420", "U"),
-    ("debian/13", "Debian 13", "Stable", "#a80030", "D"),
-    ("fedora/43", "Fedora 43", "Latest", "#3c6eb4", "F"),
-    ("archlinux", "Arch Linux", "Rolling", "#1793d1", "A"),
-    ("nixos/26.05", "NixOS 26.05", "Declarative", "#5277c3", "N"),
-    ("opensuse/tumbleweed", "openSUSE Tumbleweed", "Rolling", "#73ba25", "S"),
-    ("alpine/3.21", "Alpine 3.21", "Tiny", "#0d597f", "Al"),
-    ("rockylinux/9", "Rocky Linux 9", "RHEL-compatible", "#10b981", "R"),
+/// Images on the public Incus image server: (alias, name, note, tile icon).
+const IMAGES: &[(&str, &str, &str, &str)] = &[
+    ("ubuntu/24.04", "Ubuntu 24.04 LTS", "Long-term support", "nyx-os-ubuntu"),
+    ("ubuntu/24.04/desktop", "Ubuntu Desktop", "24.04 with GNOME · VMs only", "nyx-os-ubuntu"),
+    ("debian/13", "Debian 13", "Stable", "nyx-os-debian"),
+    ("fedora/43", "Fedora 43", "Latest", "nyx-os-fedora"),
+    ("archlinux", "Arch Linux", "Rolling", "nyx-os-archlinux"),
+    ("nixos/26.05", "NixOS 26.05", "Declarative", "nyx-os-nixos"),
+    ("opensuse/tumbleweed", "openSUSE Tumbleweed", "Rolling", "nyx-os-opensuse"),
+    ("alpine/3.21", "Alpine 3.21", "Tiny", "nyx-os-alpine"),
+    ("rockylinux/9", "Rocky Linux 9", "RHEL-compatible", "nyx-os-rockylinux"),
 ];
 
-/// Images that only come as VMs.
-const VM_ONLY: &[&str] = &["ubuntu/24.04/desktop", "iso"];
+const VM_ONLY: &[&str] = &["ubuntu/24.04/desktop"];
 
 struct Form {
     what: RefCell<What>,
@@ -53,7 +53,12 @@ struct Form {
     vm_only: Vec<gtk::Widget>,
     docker_box: gtk::Box,
     stack_box: gtk::Box,
-    tiles: RefCell<Vec<(String, gtk::ToggleButton)>>,
+    os_button: gtk::Button,
+    os_icon: gtk::Image,
+    os_title: gtk::Label,
+    os_note: gtk::Label,
+    iso_button: gtk::Button,
+    iso_note: gtk::Label,
 }
 
 pub fn open(kind: Option<Kind>) {
@@ -94,15 +99,18 @@ pub fn open(kind: Option<Kind>) {
 
     // ----- Incus: image, resources -----
     let incus_box = widgets::vbox(10);
-    let grid = gtk::FlowBox::new();
-    grid.set_selection_mode(gtk::SelectionMode::None);
-    grid.set_max_children_per_line(3);
-    grid.set_min_children_per_line(2);
-    grid.set_homogeneous(true);
-    grid.set_row_spacing(8);
-    grid.set_column_spacing(8);
-    grid.add_css_class("create-images");
-    incus_box.append(&grid);
+    let picker = widgets::hbox(8);
+    picker.add_css_class("create-images");
+    let (os_button, os_icon, os_title, os_note) = os_card("pan-down-symbolic");
+    os_button.set_hexpand(true);
+    os_button.set_tooltip_text(Some("Pick the system"));
+    picker.append(&os_button);
+    let (iso_button, iso_icon, iso_title, iso_note) = os_card("document-open-symbolic");
+    iso_icon.set_icon_name(Some("nyx-os-iso"));
+    iso_title.set_text("From an ISO…");
+    iso_note.set_text("Windows or any installer");
+    picker.append(&iso_button);
+    incus_box.append(&picker);
     let name = gtk::Entry::new();
     name.set_placeholder_text(Some("A name, e.g. dev-box"));
     name.set_hexpand(true);
@@ -199,9 +207,14 @@ pub fn open(kind: Option<Kind>) {
         vm_only: Vec::new(),
         docker_box: docker_box.clone(),
         stack_box: stack_box.clone(),
-        tiles: RefCell::new(Vec::new()),
+        os_button,
+        os_icon,
+        os_title,
+        os_note,
+        iso_button,
+        iso_note,
     });
-    fill_images(&form, &grid);
+    wire_picker(&form);
 
     if let Some((row, _)) = &host_row {
         body.append(row);
@@ -282,16 +295,11 @@ fn show_what(f: &Rc<Form>) {
     for w in &f.vm_only {
         w.set_visible(what == What::Vm);
     }
-    for (id, b) in f.tiles.borrow().iter() {
-        if VM_ONLY.contains(&id.as_str()) {
-            b.set_visible(what == What::Vm);
-        }
-    }
+    f.iso_button.set_visible(what == What::Vm);
     let on_vm_only = f.iso.borrow().is_some() || VM_ONLY.contains(&f.image.borrow().as_str());
     if what == What::Lxc && on_vm_only {
         f.iso.borrow_mut().take();
-        *f.image.borrow_mut() = "ubuntu/24.04".into();
-        select_tile(f, "ubuntu/24.04");
+        select_os(f, "ubuntu/24.04");
     }
     let (cpu, mem, disk): (f64, f64, f64) = if what == What::Vm { (4.0, 8.0, 64.0) } else { (2.0, 2.0, 16.0) };
     f.cpus.set_value(cpu.min(f.cpus.adjustment().upper()));
@@ -299,94 +307,130 @@ fn show_what(f: &Rc<Form>) {
     f.disk.set_value(disk);
 }
 
-fn tile(icon: &gtk::Widget, title: &str, note: &str) -> gtk::ToggleButton {
-    let b = gtk::ToggleButton::new();
+/// A card-style button: an OS tile, a name, a note and an end icon.
+fn os_card(end_icon: &str) -> (gtk::Button, gtk::Image, gtk::Label, gtk::Label) {
+    let b = gtk::Button::new();
     b.add_css_class("create-image");
-    let c = widgets::hbox(10);
-    c.append(icon);
+    let c = widgets::hbox(12);
+    let icon = gtk::Image::new();
+    icon.set_pixel_size(36);
+    c.append(&icon);
     let text = widgets::vbox(1);
-    let t = widgets::label(title, "create-image-title");
-    t.set_xalign(0.0);
-    t.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    text.append(&t);
-    let n = widgets::label(note, "create-image-note");
-    n.set_xalign(0.0);
-    n.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    text.append(&n);
+    text.set_hexpand(true);
+    text.set_valign(gtk::Align::Center);
+    let title = widgets::label("", "create-image-title");
+    title.set_xalign(0.0);
+    title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    text.append(&title);
+    let note = widgets::label("", "create-image-note");
+    note.set_xalign(0.0);
+    note.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    text.append(&note);
     c.append(&text);
+    let end = gtk::Image::from_icon_name(end_icon);
+    end.add_css_class("dim");
+    c.append(&end);
     b.set_child(Some(&c));
-    b
+    (b, icon, title, note)
 }
 
-fn logo(colour: &str, letter: &str) -> gtk::Widget {
-    let l = widgets::label(letter, "create-logo");
-    l.set_size_request(30, 30);
-    l.set_valign(gtk::Align::Center);
-    l.set_halign(gtk::Align::Start);
-    l.set_xalign(0.5);
-    l.set_yalign(0.5);
-    let provider = gtk::CssProvider::new();
-    provider.load_from_string(&format!("label {{ background: {colour}; }}"));
-    #[allow(deprecated)]
-    l.style_context().add_provider(&provider, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
-    l.upcast()
-}
-
-fn fill_images(f: &Rc<Form>, grid: &gtk::FlowBox) {
-    let mut tiles = Vec::new();
-    for (alias, title, note, colour, letter) in IMAGES {
-        let b = tile(&logo(colour, letter), title, note);
-        let (ff, a) = (f.clone(), alias.to_string());
-        b.connect_clicked(move |_| {
-            *ff.image.borrow_mut() = a.clone();
-            ff.iso.borrow_mut().take();
-            select_tile(&ff, &a);
-            if ff.name.text().is_empty() || ff.name.text().ends_with("-1") {
-                ff.name.set_text(&format!("{}-1", a.split('/').next().unwrap_or("guest")));
-            }
-        });
-        grid.append(&b);
-        tiles.push((alias.to_string(), b));
+fn select_os(f: &Rc<Form>, alias: &str) {
+    let Some((a, title, note, icon)) = IMAGES.iter().find(|i| i.0 == alias) else { return };
+    *f.image.borrow_mut() = a.to_string();
+    f.iso.borrow_mut().take();
+    f.os_icon.set_icon_name(Some(icon));
+    f.os_title.set_text(title);
+    f.os_note.set_text(note);
+    f.os_button.add_css_class("selected");
+    f.iso_button.remove_css_class("selected");
+    f.iso_note.set_text("Windows or any installer");
+    let current = f.name.text().to_string();
+    if current.is_empty() || IMAGES.iter().any(|i| current == default_name(i.0)) || current.ends_with("-1") {
+        f.name.set_text(&default_name(a));
     }
-    let disc = gtk::Image::from_icon_name("media-optical-symbolic");
-    disc.set_pixel_size(20);
-    disc.add_css_class("create-logo-plain");
-    let iso = tile(disc.upcast_ref(), "From an ISO…", "Windows or any installer");
+}
+
+fn default_name(alias: &str) -> String {
+    let base = alias.split('/').next().unwrap_or("guest");
+    if alias.ends_with("/desktop") { format!("{base}-desktop") } else { format!("{base}-1") }
+}
+
+fn wire_picker(f: &Rc<Form>) {
     let ff = f.clone();
-    iso.connect_clicked(move |_| {
+    f.os_button.connect_clicked(move |b| {
+        let popover = gtk::Popover::new();
+        popover.add_css_class("create-os-menu");
+        popover.set_has_arrow(false);
+        popover.set_position(gtk::PositionType::Bottom);
+        let list = widgets::vbox(2);
+        let vm = *ff.what.borrow() == What::Vm;
+        for (alias, title, note, icon) in IMAGES.iter().filter(|i| vm || !VM_ONLY.contains(&i.0)) {
+            let row = gtk::Button::new();
+            row.add_css_class("flat");
+            row.add_css_class("create-os-row");
+            let c = widgets::hbox(12);
+            let i = gtk::Image::from_icon_name(icon);
+            i.set_pixel_size(30);
+            c.append(&i);
+            let text = widgets::vbox(1);
+            let t = widgets::label(title, "create-image-title");
+            t.set_xalign(0.0);
+            text.append(&t);
+            let n = widgets::label(note, "create-image-note");
+            n.set_xalign(0.0);
+            text.append(&n);
+            c.append(&text);
+            if *ff.image.borrow() == *alias && ff.iso.borrow().is_none() {
+                let check = gtk::Image::from_icon_name("object-select-symbolic");
+                check.set_hexpand(true);
+                check.set_halign(gtk::Align::End);
+                check.add_css_class("accent");
+                c.append(&check);
+            }
+            row.set_child(Some(&c));
+            let (f2, a, p) = (ff.clone(), alias.to_string(), popover.clone());
+            row.connect_clicked(move |_| {
+                select_os(&f2, &a);
+                p.popdown();
+            });
+            list.append(&row);
+        }
+        let scroll = gtk::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .propagate_natural_height(true)
+            .max_content_height(420)
+            .child(&list)
+            .build();
+        popover.set_child(Some(&scroll));
+        popover.set_parent(b);
+        let w = b.width();
+        list.set_size_request(w.max(280) - 12, -1);
+        popover.connect_closed(|p| {
+            let p = p.clone();
+            gtk::glib::idle_add_local_once(move || p.unparent());
+        });
+        popover.popup();
+    });
+    let ff = f.clone();
+    f.iso_button.connect_clicked(move |_| {
         let chooser = gtk::FileDialog::new();
         chooser.set_title("Installer ISO");
         let f2 = ff.clone();
         chooser.open(window::window().as_ref(), None::<&gtk::gio::Cancellable>, move |r| {
-            match r.ok().and_then(|file| file.path()) {
-                Some(path) => {
-                    let stem = path.file_stem().map(|s| s.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
-                    *f2.iso.borrow_mut() = Some(path.display().to_string());
-                    select_tile(&f2, "iso");
-                    if f2.name.text().is_empty() {
-                        let short: String = stem.chars().take_while(|c| c.is_ascii_alphanumeric()).collect();
-                        f2.name.set_text(if short.is_empty() { "vm-1" } else { &short });
-                    }
-                }
-                None => {
-                    let image = f2.image.borrow().clone();
-                    select_tile(&f2, &image);
+            if let Some(path) = r.ok().and_then(|file| file.path()) {
+                let stem = path.file_stem().map(|s| s.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+                *f2.iso.borrow_mut() = Some(path.display().to_string());
+                f2.iso_button.add_css_class("selected");
+                f2.os_button.remove_css_class("selected");
+                f2.iso_note.set_text(&path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default());
+                let short: String = stem.chars().take_while(|c| c.is_ascii_alphanumeric()).collect();
+                if f2.name.text().is_empty() || f2.name.text().ends_with("-1") {
+                    f2.name.set_text(if short.is_empty() { "vm-1" } else { &short });
                 }
             }
         });
     });
-    grid.append(&iso);
-    tiles.push(("iso".into(), iso));
-    *f.tiles.borrow_mut() = tiles;
-    *f.image.borrow_mut() = "ubuntu/24.04".into();
-    select_tile(f, "ubuntu/24.04");
-    f.name.set_text("ubuntu-1");
-}
-
-fn select_tile(f: &Rc<Form>, id: &str) {
-    for (tid, b) in f.tiles.borrow().iter() {
-        b.set_active(tid == id);
-    }
+    select_os(f, "ubuntu/24.04");
 }
 
 fn valid_name(name: &str) -> bool {

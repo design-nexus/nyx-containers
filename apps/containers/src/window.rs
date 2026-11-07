@@ -102,10 +102,24 @@ pub fn present(app: &gtk::Application, section: Option<&str>) {
 }
 
 fn install_icons() {
-    const ICONS: &[(&str, &str)] = &[(
-        "io.github.design_nexus.nyx.Containers.svg",
-        include_str!("../data/icons/io.github.design_nexus.nyx.Containers.svg"),
-    )];
+    macro_rules! icon {
+        ($name:literal) => {
+            ($name, include_str!(concat!("../data/icons/", $name)))
+        };
+    }
+    const ICONS: &[(&str, &str)] = &[
+        icon!("io.github.design_nexus.nyx.Containers.svg"),
+        icon!("nyx-os-ubuntu.svg"),
+        icon!("nyx-os-debian.svg"),
+        icon!("nyx-os-fedora.svg"),
+        icon!("nyx-os-archlinux.svg"),
+        icon!("nyx-os-nixos.svg"),
+        icon!("nyx-os-opensuse.svg"),
+        icon!("nyx-os-alpine.svg"),
+        icon!("nyx-os-rockylinux.svg"),
+        icon!("nyx-os-windows.svg"),
+        icon!("nyx-os-iso.svg"),
+    ];
     let dir = crate::paths::cache_dir().join("icons");
     for (name, svg) in ICONS {
         let path = dir.join(name);
