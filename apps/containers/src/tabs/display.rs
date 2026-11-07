@@ -70,6 +70,8 @@ pub struct Display {
     inputs: RefCell<Option<glib::Object>>,
     display: RefCell<Option<glib::Object>>,
     dirty: Cell<bool>,
+    damage: Cell<Option<(i32, i32, i32, i32)>>,
+    full_frame: Cell<bool>,
     guest: Cell<(i32, i32)>,
     buttons: Cell<i32>,
     last: Cell<(f64, f64)>,
@@ -216,6 +218,8 @@ impl Display {
             inputs: RefCell::new(None),
             display: RefCell::new(None),
             dirty: Cell::new(false),
+            damage: Cell::new(None),
+            full_frame: Cell::new(true),
             guest: Cell::new((0, 0)),
             buttons: Cell::new(0),
             last: Cell::new((0.0, 0.0)),
@@ -347,16 +351,39 @@ impl Display {
             }
             "SpiceDisplayChannel" => {
                 *self.display.borrow_mut() = Some(channel.clone());
-                for sig in ["display-primary-create", "display-invalidate", "display-mark"] {
+                for sig in ["display-primary-create", "display-mark"] {
                     if has_signal(channel, sig) {
                         let w = weak.clone();
                         channel.connect_local(sig, false, move |_| {
                             if let Some(d) = w.upgrade() {
                                 d.dirty.set(true);
+                                d.damage.set(None);
+                                d.full_frame.set(true);
                             }
                             None
                         });
                     }
+                }
+                if has_signal(channel, "display-invalidate") {
+                    let w = weak.clone();
+                    channel.connect_local("display-invalidate", false, move |args| {
+                        let int = |i: usize| args.get(i).and_then(|v| v.get::<i32>().ok()).unwrap_or(0);
+                        if let Some(d) = w.upgrade() {
+                            let (x, y, ww, hh) = (int(1), int(2), int(3), int(4));
+                            // Grow the changed area to cover this one too.
+                            let next = match d.damage.get() {
+                                Some((ax, ay, aw, ah)) => {
+                                    let (x0, y0) = (ax.min(x), ay.min(y));
+                                    let (x1, y1) = ((ax + aw).max(x + ww), (ay + ah).max(y + hh));
+                                    (x0, y0, x1 - x0, y1 - y0)
+                                }
+                                None => (x, y, ww, hh),
+                            };
+                            d.damage.set(Some(next));
+                            d.dirty.set(true);
+                        }
+                        None
+                    });
                 }
                 if has_signal(channel, "display-primary-destroy") {
                     let w = weak.clone();
@@ -431,9 +458,23 @@ impl Display {
                 let len = (p.stride * p.height) as usize;
                 let pixels = unsafe { std::slice::from_raw_parts(p.data, len) };
                 let bytes = glib::Bytes::from(pixels);
-                let texture = gdk::MemoryTexture::new(p.width, p.height, gdk::MemoryFormat::B8g8r8x8, &bytes, p.stride as usize);
+                let builder = gdk::MemoryTextureBuilder::new()
+                    .set_bytes(Some(&bytes))
+                    .set_width(p.width)
+                    .set_height(p.height)
+                    .set_stride(p.stride as usize)
+                    .set_format(gdk::MemoryFormat::B8g8r8x8);
+                // Only the changed rectangle goes to the GPU when the size holds.
+                let previous = self.texture.borrow().clone().filter(|t| t.width() == p.width && t.height() == p.height);
+                let builder = match (previous, self.damage.take(), self.full_frame.replace(false)) {
+                    (Some(prev), Some((x, y, w, h)), false) => builder
+                        .set_update_texture(Some(&prev))
+                        .set_update_region(Some(&gtk::cairo::Region::create_rectangle(&gtk::cairo::RectangleInt::new(x, y, w, h)))),
+                    _ => builder,
+                };
+                let texture = builder.build();
                 self.picture.set_paintable(Some(&texture));
-                *self.texture.borrow_mut() = Some(texture.upcast());
+                *self.texture.borrow_mut() = Some(texture);
                 if self.guest.get() != (p.width, p.height) {
                     self.guest.set((p.width, p.height));
                     self.paint_status();

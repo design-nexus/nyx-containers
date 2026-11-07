@@ -1210,7 +1210,7 @@ pub async fn follow_logs(
                     break;
                 }
             }
-            _ = tokio::time::sleep(Duration::from_secs(2)) => {}
+            _ = tokio::time::sleep(Duration::from_secs(3)) => {}
         }
     }
     Ok(())

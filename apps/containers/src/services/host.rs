@@ -5,10 +5,20 @@ use crate::models::{HEALTH_POINTS, HostHealth, HostId};
 use crate::prefs::RemoteProfile;
 use std::collections::HashMap;
 
+/// Disk use changes slowly and is costly to ask for (`docker system df` walks
+/// every layer), so it's read this often; CPU and memory every sample.
+const DISK_EVERY: std::time::Duration = std::time::Duration::from_secs(60);
+/// The remote's figures come over the network.
+const REMOTE_EVERY: std::time::Duration = std::time::Duration::from_secs(15);
+
+type Cached = (std::time::Instant, Option<u64>, Option<u64>, Option<u64>, Option<u64>);
+
 #[derive(Default)]
 pub struct Sampler {
     prev_cpu: Option<(u64, u64)>,
     hist: HashMap<HostId, HostHealth>,
+    local_disk: Option<(std::time::Instant, Option<u64>, Option<u64>)>,
+    remote: Option<Cached>,
 }
 
 impl Sampler {
@@ -25,6 +35,11 @@ impl Sampler {
         let (cpu, idle_total) = cpu_percent(self.prev_cpu);
         self.prev_cpu = idle_total;
         let (mem_used, mem_total) = meminfo();
+        if let Some((at, used, total)) = self.local_disk
+            && at.elapsed() < DISK_EVERY
+        {
+            return push(self, HostId::Local, cpu, mem_used, mem_total, used, total);
+        }
         let mut disk_used = None;
         let mut disk_total = None;
         if let Ok((used, total)) = docker::host_disk(HostId::Local, remote).await {
@@ -39,10 +54,16 @@ impl Sampler {
                 disk_total = Some(disk_total.unwrap_or(0) + t);
             }
         }
+        self.local_disk = Some((std::time::Instant::now(), disk_used, disk_total));
         push(self, HostId::Local, cpu, mem_used, mem_total, disk_used, disk_total)
     }
 
     async fn sample_remote(&mut self, remote: &RemoteProfile) -> HostHealth {
+        if let Some((at, mu, mt, du, dt)) = self.remote
+            && at.elapsed() < REMOTE_EVERY
+        {
+            return push(self, HostId::Remote, None, mu, mt, du, dt);
+        }
         let mut mem_used = None;
         let mut mem_total = None;
         let mut disk_used = None;
@@ -68,6 +89,7 @@ impl Sampler {
                 disk_total = Some(disk_total.unwrap_or(0) + t);
             }
         }
+        self.remote = Some((std::time::Instant::now(), mem_used, mem_total, disk_used, disk_total));
         push(self, HostId::Remote, None, mem_used, mem_total, disk_used, disk_total)
     }
 }

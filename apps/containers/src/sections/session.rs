@@ -33,17 +33,49 @@ pub fn next_seq() -> u64 {
     })
 }
 
+/// The most lines a logs view keeps and shows.
+const LOG_LINES: usize = 10_000;
+
+/// New lines go on the end; nothing already shown is redrawn.
 pub fn apply_chunk(chunk: LogChunk) {
     let Some(ui) = LOGS.with(|m| m.borrow().get(&chunk.seq).cloned()) else { return };
+    let query = ui.query.text().to_string();
+    let filter = *ui.filter.borrow();
+    let lines: Vec<&str> = chunk.text.split_inclusive('\n').collect();
+    let skip = lines.len().saturating_sub(LOG_LINES);
+    let mut added = String::new();
     {
-        let mut chunks = ui.chunks.borrow_mut();
-        chunks.push(chunk);
-        if chunks.len() > 8000 {
-            let drop = chunks.len() - 8000;
-            chunks.drain(..drop);
+        let mut store = ui.chunks.borrow_mut();
+        for line in &lines[skip..] {
+            let one = LogChunk { seq: chunk.seq, stream: chunk.stream, text: line.to_string() };
+            if log_visible(&one, filter, &query) {
+                added.push_str(line);
+                if !line.ends_with('\n') {
+                    added.push('\n');
+                }
+            }
+            store.push(one);
+        }
+        if store.len() > LOG_LINES {
+            let drop = store.len() - LOG_LINES;
+            store.drain(..drop);
         }
     }
-    rebuild(&ui);
+    if added.is_empty() {
+        return;
+    }
+    let mut end = ui.buffer.end_iter();
+    ui.buffer.insert(&mut end, &added);
+    let shown = ui.buffer.line_count() as usize;
+    if shown > LOG_LINES + 500 {
+        let mut start = ui.buffer.start_iter();
+        let mut cut = ui.buffer.iter_at_line((shown - LOG_LINES) as i32).unwrap_or_else(|| ui.buffer.start_iter());
+        ui.buffer.delete(&mut start, &mut cut);
+    }
+    if ui.follow.is_active() {
+        let mut end = ui.buffer.end_iter();
+        ui.view.scroll_to_iter(&mut end, 0.0, false, 0.0, 0.0);
+    }
 }
 
 pub fn apply_done(_seq: u64, result: Result<(), String>) {

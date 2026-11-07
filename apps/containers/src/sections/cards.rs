@@ -214,6 +214,17 @@ struct Card {
     sig: RefCell<String>,
     svc_sig: RefCell<String>,
     svc_live: RefCell<Vec<(String, gtk::Label, gtk::Label)>>,
+    /// What the card last showed; an unchanged refresh leaves its widgets alone.
+    data_sig: RefCell<String>,
+}
+
+fn data_sig(item: &Item) -> String {
+    let minute = crate::models::now_secs() / 60;
+    let narrow = window::is_narrow();
+    match item {
+        Item::One(w) => format!("{w:?}|{minute}|{narrow}|{}", actions::is_pinned(&w.key())),
+        Item::Stack(s, services) => format!("{s:?}|{services:?}|{minute}|{narrow}|{:?}", prefs::get().expanded),
+    }
 }
 
 struct PageUi {
@@ -549,7 +560,13 @@ fn paint(ui: &Rc<PageUi>, snapshot: &Snapshot, host: HostFilter, query: &str) {
             layout.push(key.clone());
             let existing = ui.cards.borrow().get(&key).cloned();
             match existing {
-                Some(card) => update_card(&card, item),
+                Some(card) => {
+                    let sig = data_sig(item);
+                    if *card.data_sig.borrow() != sig {
+                        *card.data_sig.borrow_mut() = sig;
+                        update_card(&card, item);
+                    }
+                }
                 None => {
                     let card = new_card(item);
                     ui.cards.borrow_mut().insert(key, card);
@@ -742,6 +759,7 @@ fn new_card(item: &Item) -> Rc<Card> {
         sig: RefCell::new(String::new()),
         svc_sig: RefCell::new(String::new()),
         svc_live: RefCell::new(Vec::new()),
+        data_sig: RefCell::new(data_sig(item)),
     });
     let click = gtk::GestureClick::new();
     let weak = Rc::downgrade(&card);

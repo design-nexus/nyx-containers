@@ -709,15 +709,36 @@ pub fn snapshot() -> Option<Snapshot> {
     ui().map(|u| u.borrow().snapshot.clone())
 }
 
+/// With NYX_CONTAINERS_PROFILE set, report main-loop work that takes over 4 ms.
+pub fn timed<T>(what: &str, f: impl FnOnce() -> T) -> T {
+    thread_local! {
+        static ON: bool = std::env::var_os("NYX_CONTAINERS_PROFILE").is_some();
+    }
+    if !ON.with(|o| *o) {
+        return f();
+    }
+    let start = std::time::Instant::now();
+    let out = f();
+    let ms = start.elapsed().as_secs_f64() * 1000.0;
+    if ms > 4.0 {
+        eprintln!("nyx-containers: {what} took {ms:.1} ms");
+    }
+    out
+}
+
 pub fn apply_health(list: Vec<HostHealth>) {
-    crate::sections::host::apply_health(list.clone());
-    crate::sections::cards::apply_health(list);
+    timed("health", || {
+        crate::sections::host::apply_health(list.clone());
+        crate::sections::cards::apply_health(list);
+    });
 }
 
 pub fn apply_live(samples: Vec<LiveSample>) {
-    history::push(&samples);
-    crate::sections::cards::apply_live();
-    tabs::apply_live();
+    timed("live", || {
+        history::push(&samples);
+        crate::sections::cards::apply_live();
+        tabs::apply_live();
+    });
 }
 
 pub fn apply_diag(report: DiagReport) {
@@ -756,6 +777,10 @@ pub fn open_uri(uri: &str) {
 }
 
 pub fn apply_snapshot(snapshot: Snapshot) {
+    timed("snapshot", || apply_snapshot_now(snapshot));
+}
+
+fn apply_snapshot_now(snapshot: Snapshot) {
     let Some(ui) = ui() else { return };
     {
         let mut u = ui.borrow_mut();
@@ -806,7 +831,7 @@ pub fn apply_snaps(host: HostId, instance: String, result: Result<Vec<InstanceSn
 }
 
 pub fn apply_log(chunk: LogChunk) {
-    crate::sections::session::apply_chunk(chunk);
+    timed("log chunk", || crate::sections::session::apply_chunk(chunk));
 }
 
 pub fn apply_log_done(seq: u64, result: Result<(), String>) {
