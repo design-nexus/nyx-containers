@@ -231,6 +231,14 @@ fn build(app: &gtk::Application) {
     window.set_child(Some(&overlay));
 
     install_keys(&window, &search);
+    // If the window manager ends fullscreen (a keybinding, a gesture), follow it.
+    window.connect_fullscreened_notify(|w| {
+        if !w.is_fullscreen()
+            && let Some(d) = crate::tabs::display::fullscreen_display()
+        {
+            d.leave_fullscreen();
+        }
+    });
     let last = std::cell::Cell::new(0);
     window.add_tick_callback(move |w, _| {
         if w.width() != last.get() {
@@ -387,6 +395,12 @@ fn install_keys(window: &gtk::ApplicationWindow, search: &gtk::SearchEntry) {
             return glib::Propagation::Proceed;
         }
         let done = glib::Propagation::Stop;
+        if matches!(key, gdk::Key::Escape | gdk::Key::F11)
+            && let Some(d) = crate::tabs::display::fullscreen_display()
+        {
+            d.leave_fullscreen();
+            return done;
+        }
         if settings_dialog::is_open() {
             return match key {
                 gdk::Key::Escape => {

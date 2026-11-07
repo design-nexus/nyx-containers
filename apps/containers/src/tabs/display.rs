@@ -77,6 +77,7 @@ pub struct Display {
     asked: Cell<(i32, i32)>,
     stable: Cell<(i32, i32, i64)>,
     fullscreen: Cell<bool>,
+    bar_hold: Cell<u32>,
     captured: Cell<bool>,
     texture: RefCell<Option<gdk::Texture>>,
     closed: Cell<bool>,
@@ -222,6 +223,7 @@ impl Display {
             asked: Cell::new((0, 0)),
             stable: Cell::new((0, 0, 0)),
             fullscreen: Cell::new(false),
+            bar_hold: Cell::new(0),
             captured: Cell::new(false),
             texture: RefCell::new(None),
             closed: Cell::new(false),
@@ -698,6 +700,7 @@ impl Display {
                 if let Some(w) = c.widget().and_then(|w| w.root()).and_downcast::<gtk::Window>() {
                     gtk::prelude::GtkWindowExt::set_focus(&w, None::<&gtk::Widget>);
                 }
+                d.show_bar_for(4000);
                 return glib::Propagation::Stop;
             }
             if ctrl && alt && matches!(keyval, gdk::Key::Return | gdk::Key::KP_Enter) {
@@ -866,7 +869,13 @@ impl Display {
         });
         bar.append(&keys);
         let w = Rc::downgrade(self);
-        let leave = widgets::icon_button("view-restore-symbolic", "Leave fullscreen (Ctrl+Alt+Enter)");
+        let leave = gtk::Button::new();
+        let leave_box = widgets::hbox(6);
+        leave_box.append(&gtk::Image::from_icon_name("view-restore-symbolic"));
+        leave_box.append(&widgets::label("Exit fullscreen", ""));
+        leave.set_child(Some(&leave_box));
+        leave.add_css_class("display-fs-exit");
+        leave.set_tooltip_text(Some("Ctrl+Alt+Enter, or Esc once the keyboard is released"));
         leave.connect_clicked(move |_| {
             if let Some(d) = w.upgrade() {
                 d.toggle_fullscreen();
@@ -876,17 +885,55 @@ impl Display {
         let w = self.workload.clone();
         bar.append(&actions::power_button(&w));
         self.fs_bar.set_child(Some(&bar));
-        // Shows when the pointer nears the top edge while fullscreen.
+        // Shows when the pointer comes near the top while fullscreen. The zone is deep
+        // because the desktop's own bar may take the screen's top few pixels.
         let motion = gtk::EventControllerMotion::new();
         let weak = Rc::downgrade(self);
         motion.connect_motion(move |_, _, y| {
             if let Some(d) = weak.upgrade()
                 && d.fullscreen.get()
             {
-                d.fs_bar.set_reveal_child(y < 6.0 || (d.fs_bar.reveals_child() && y < 60.0));
+                if y < 80.0 {
+                    d.fs_bar.set_reveal_child(true);
+                } else if y > 150.0 && d.bar_hold.get() == 0 {
+                    d.fs_bar.set_reveal_child(false);
+                }
             }
         });
         self.picture.add_controller(motion);
+    }
+
+    /// Keep the fullscreen bar up for `ms`, then hide it unless the pointer is near it.
+    fn show_bar_for(self: &Rc<Self>, ms: u64) {
+        if !self.fullscreen.get() {
+            return;
+        }
+        self.fs_bar.set_reveal_child(true);
+        let token = self.bar_hold.get().wrapping_add(1);
+        self.bar_hold.set(token);
+        let weak = Rc::downgrade(self);
+        glib::timeout_add_local_once(std::time::Duration::from_millis(ms), move || {
+            if let Some(d) = weak.upgrade()
+                && d.bar_hold.get() == token
+            {
+                d.bar_hold.set(0);
+                let near = d.last.get().1 < 80.0;
+                if !near {
+                    d.fs_bar.set_reveal_child(false);
+                }
+            }
+        });
+    }
+
+    /// Leave fullscreen from outside the display (Esc, F11, the window manager).
+    pub fn leave_fullscreen(self: &Rc<Self>) {
+        if self.fullscreen.get() {
+            self.toggle_fullscreen();
+        }
+    }
+
+    pub fn is_fullscreen(&self) -> bool {
+        self.fullscreen.get()
     }
 
     fn toggle_fullscreen(self: &Rc<Self>) {
@@ -901,18 +948,19 @@ impl Display {
         } else {
             self.root.remove_css_class("fullscreen");
         }
-        self.fs_bar.set_reveal_child(on);
         if on {
-            let weak = Rc::downgrade(self);
-            glib::timeout_add_local_once(std::time::Duration::from_millis(2500), move || {
-                if let Some(d) = weak.upgrade() {
-                    d.fs_bar.set_reveal_child(false);
-                }
-            });
-            window::toast("Ctrl+Alt releases the keyboard · Ctrl+Alt+Enter leaves fullscreen");
+            self.show_bar_for(3000);
+            window::toast("Ctrl+Alt releases the keyboard · then Esc leaves fullscreen");
+        } else {
+            self.fs_bar.set_reveal_child(false);
         }
         self.asked.set((0, 0));
     }
+}
+
+/// The display that's fullscreen, if any.
+pub fn fullscreen_display() -> Option<Rc<Display>> {
+    DISPLAYS.with(|m| m.borrow().values().filter_map(Weak::upgrade).find(|d| d.is_fullscreen()))
 }
 
 pub fn apply_ready(seq: u64, result: Result<std::path::PathBuf, String>) {

@@ -987,3 +987,15 @@ window.containers-window button.create-os-row {
   padding: 4px 10px;
   border-radius: var(--nyx-radius-small);
 }
+
+/* Below the desktop bar's strip, which can take the screen's top edge. */
+.display-view.fullscreen .display-fs-bar {
+  margin-top: 44px;
+}
+
+window.containers-window button.display-fs-exit {
+  min-height: 30px;
+  padding: 0 12px;
+  background: @nav_active;
+  font-weight: 500;
+}
