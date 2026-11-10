@@ -149,4 +149,14 @@ install -m 644 "$root/apps/containers/data/io.github.design_nexus.nyx.Containers
 install -m 644 "$root/crates/nyx-icons/apps/io.github.design_nexus.nyx.Containers.svg" "$icons/"
 gtk-update-icon-cache -f -t "$share/icons/hicolor" >/dev/null 2>&1 || true
 update-desktop-database "$desk" >/dev/null 2>&1 || true
+# What Containers does for nyx containers …, Glimpse and the Assistant (its action
+# manifest), and the D-Bus service that starts it without a window for a call.
+mkdir -p "$share/nyx/actions" "$share/dbus-1/services"
+manifest=$(mktemp)
+if timeout 10 "$bin/nyx-containers" --describe-actions >"$manifest" 2>/dev/null; then
+  install -m 644 "$manifest" "$share/nyx/actions/io.github.design_nexus.nyx.Containers.json"
+  printf '[D-BUS Service]\nName=io.github.design_nexus.nyx.Containers\nExec=%s --gapplication-service\n' "$bin/nyx-containers" >"$share/dbus-1/services/io.github.design_nexus.nyx.Containers.service"
+  busctl --user call org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus ReloadConfig >/dev/null 2>&1 || true
+fi
+rm -f "$manifest"
 say "Installed $bin/nyx-containers"

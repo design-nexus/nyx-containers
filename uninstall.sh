@@ -13,6 +13,7 @@ config="${XDG_CONFIG_HOME:-$HOME/.config}"
 rm -f "$bin/nyx-containers"
 rm -f "$share/applications/io.github.design_nexus.nyx.Containers.desktop"
 rm -f "$share/icons/hicolor/scalable/apps/io.github.design_nexus.nyx.Containers.svg"
+rm -f "$share/nyx/actions/io.github.design_nexus.nyx.Containers.json" "$share/dbus-1/services/io.github.design_nexus.nyx.Containers.service"
 gtk-update-icon-cache -f -t "$share/icons/hicolor" >/dev/null 2>&1 || true
 update-desktop-database "$share/applications" >/dev/null 2>&1 || true
 if $purge; then

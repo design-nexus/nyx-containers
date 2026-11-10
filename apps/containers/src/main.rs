@@ -1,5 +1,6 @@
 //! Containers — Incus and Docker management for Omarchy.
 
+mod control;
 mod cmd;
 mod engines;
 mod history;
@@ -48,7 +49,24 @@ fn main() -> glib::ExitCode {
     let _ = tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env()).try_init();
 
     let id = std::env::var("NYX_CONTAINERS_APP_ID").unwrap_or_else(|_| APP_ID.to_string());
-    let app = gtk::Application::builder().application_id(id).flags(gio::ApplicationFlags::HANDLES_COMMAND_LINE).build();
+    nyx_core::control::describe_if_asked(&control::description(&id));
+    // D-Bus starts Containers with --gapplication-service for a call from nyx, Glimpse or
+    // Nyx Assistant: no window, and it quits once idle. GLib won't parse the flag for
+    // apps that handle their own command line.
+    let mut args = args;
+    let service = args.iter().any(|a| a == "--gapplication-service");
+    args.retain(|a| a != "--gapplication-service");
+    let mut flags = gio::ApplicationFlags::HANDLES_COMMAND_LINE;
+    if service {
+        flags |= gio::ApplicationFlags::IS_SERVICE;
+    }
+    let app = gtk::Application::builder().application_id(id).flags(flags).build();
+    app.connect_startup(move |app| {
+        control::serve(app);
+        if service {
+            app.set_inactivity_timeout(10_000);
+        }
+    });
     app.connect_command_line(|app, cl| {
         let argv: Vec<String> = cl.arguments().iter().map(|a| a.to_string_lossy().to_string()).collect();
         if argv.iter().any(|a| a == "--toggle")
@@ -73,5 +91,5 @@ fn main() -> glib::ExitCode {
         worker::shutdown();
         prefs::flush();
     });
-    app.run()
+    app.run_with_args(&args)
 }
