@@ -81,6 +81,8 @@ pub struct Display {
     fullscreen: Cell<bool>,
     bar_hold: Cell<u32>,
     captured: Cell<bool>,
+    hovered: Cell<bool>,
+    release_pending: Cell<bool>,
     texture: RefCell<Option<gdk::Texture>>,
     closed: Cell<bool>,
 }
@@ -230,6 +232,8 @@ impl Display {
             fullscreen: Cell::new(false),
             bar_hold: Cell::new(0),
             captured: Cell::new(false),
+            hovered: Cell::new(false),
+            release_pending: Cell::new(false),
             texture: RefCell::new(None),
             closed: Cell::new(false),
         });
@@ -550,7 +554,7 @@ impl Display {
     }
 
     fn disconnect(&self) {
-        self.release_all();
+        self.drop_capture();
         if let Some(s) = self.session.borrow_mut().take() {
             // SAFETY: the session is alive until we drop our reference below.
             unsafe { ffi::spice_session_disconnect(raw(&s)) };
@@ -648,11 +652,17 @@ impl Display {
         for sc in held {
             self.key(sc, false);
         }
-        for b in [1, 2, 3] {
+        self.release_buttons();
+    }
+
+    fn release_buttons(&self) {
+        for b in [1, 2, 3, 8, 9] {
             if self.buttons.get() != 0 {
                 self.send_button(b, false);
             }
         }
+        // With no inputs channel the releases above never reach the guest.
+        self.buttons.set(0);
     }
 
     fn send_combo(&self, codes: &[u32]) {
@@ -665,9 +675,10 @@ impl Display {
     }
 
     fn set_captured(&self, on: bool) {
-        // Only a window the user is typing in may take the keyboard from the desktop.
+        // Only a window the user is typing in may take the keyboard from the desktop,
+        // and only while the pointer is over the screen: nothing else releases it.
         let active = self.picture.root().and_downcast::<gtk::Window>().is_some_and(|w| w.is_active());
-        let on = on && active;
+        let on = on && active && self.hovered.get();
         if self.captured.replace(on) == on {
             return;
         }
@@ -684,12 +695,50 @@ impl Display {
         self.paint_status();
     }
 
+    /// Give the keyboard and mouse back to the app and the desktop.
+    fn drop_capture(&self) {
+        self.release_pending.set(false);
+        self.release_all();
+        self.set_captured(false);
+        if self.picture.has_focus()
+            && let Some(w) = self.picture.root().and_downcast::<gtk::Window>()
+        {
+            gtk::prelude::GtkWindowExt::set_focus(&w, None::<&gtk::Widget>);
+        }
+    }
+
+    fn release_capture(self: &Rc<Self>) {
+        self.drop_capture();
+        self.show_bar_for(4000);
+    }
+
     fn wire_input(self: &Rc<Self>) {
         let weak = Rc::downgrade(self);
         let motion = gtk::EventControllerMotion::new();
         motion.connect_motion(move |_, x, y| {
             if let Some(d) = weak.upgrade() {
                 d.send_motion(x, y);
+            }
+        });
+        let weak = Rc::downgrade(self);
+        motion.connect_enter(move |_, _, _| {
+            if let Some(d) = weak.upgrade() {
+                d.hovered.set(true);
+                d.release_pending.set(false);
+            }
+        });
+        let weak = Rc::downgrade(self);
+        motion.connect_leave(move |_| {
+            let Some(d) = weak.upgrade() else { return };
+            d.hovered.set(false);
+            if !d.captured.get() && !d.picture.has_focus() {
+                return;
+            }
+            // A drag that crosses the edge keeps going until the button comes up.
+            if d.buttons.get() == 0 {
+                d.release_capture();
+            } else {
+                d.release_pending.set(true);
             }
         });
         self.picture.add_controller(motion);
@@ -699,6 +748,8 @@ impl Display {
         let weak = Rc::downgrade(self);
         click.connect_pressed(move |g, _, x, y| {
             let Some(d) = weak.upgrade() else { return };
+            d.hovered.set(true);
+            d.release_pending.set(false);
             if !d.picture.has_focus() {
                 d.picture.grab_focus();
             }
@@ -711,6 +762,18 @@ impl Display {
             let Some(d) = weak.upgrade() else { return };
             d.send_motion(x, y);
             d.send_button(g.current_button(), false);
+            if d.release_pending.get() && !d.hovered.get() && d.buttons.get() == 0 {
+                d.release_capture();
+            }
+        });
+        // A cancelled click never reports its release; don't leave the button held.
+        let weak = Rc::downgrade(self);
+        click.connect_cancel(move |_, _| {
+            let Some(d) = weak.upgrade() else { return };
+            d.release_buttons();
+            if d.release_pending.get() && !d.hovered.get() {
+                d.release_capture();
+            }
         });
         self.picture.add_controller(click);
 
@@ -730,19 +793,14 @@ impl Display {
 
         let keys = gtk::EventControllerKey::new();
         let weak = Rc::downgrade(self);
-        keys.connect_key_pressed(move |c, keyval, keycode, state| {
+        keys.connect_key_pressed(move |_, keyval, keycode, state| {
             let Some(d) = weak.upgrade() else { return glib::Propagation::Proceed };
             let ctrl = state.contains(gdk::ModifierType::CONTROL_MASK);
             let alt = state.contains(gdk::ModifierType::ALT_MASK);
             let modifier_key = matches!(keyval, gdk::Key::Control_L | gdk::Key::Control_R | gdk::Key::Alt_L | gdk::Key::Alt_R);
             // Ctrl+Alt: give the keyboard and mouse back.
             if modifier_key && ((ctrl && matches!(keyval, gdk::Key::Alt_L | gdk::Key::Alt_R)) || (alt && matches!(keyval, gdk::Key::Control_L | gdk::Key::Control_R))) {
-                d.release_all();
-                d.set_captured(false);
-                if let Some(w) = c.widget().and_then(|w| w.root()).and_downcast::<gtk::Window>() {
-                    gtk::prelude::GtkWindowExt::set_focus(&w, None::<&gtk::Widget>);
-                }
-                d.show_bar_for(4000);
+                d.release_capture();
                 return glib::Propagation::Stop;
             }
             if ctrl && alt && matches!(keyval, gdk::Key::Return | gdk::Key::KP_Enter) {
@@ -769,9 +827,22 @@ impl Display {
         let focus = gtk::EventControllerFocus::new();
         let weak = Rc::downgrade(self);
         focus.connect_enter(move |_| {
-            if let Some(d) = weak.upgrade() {
+            let Some(d) = weak.upgrade() else { return };
+            if d.hovered.get() {
                 d.set_captured(true);
+                return;
             }
+            // Focus that didn't come from a click (the stack handing it over when the
+            // first frame arrives, the window coming back) goes back to the app.
+            let weak = Rc::downgrade(&d);
+            glib::idle_add_local_once(move || {
+                if let Some(d) = weak.upgrade()
+                    && d.picture.has_focus()
+                    && !d.hovered.get()
+                {
+                    d.drop_capture();
+                }
+            });
         });
         let weak = Rc::downgrade(self);
         focus.connect_leave(move |_| {
