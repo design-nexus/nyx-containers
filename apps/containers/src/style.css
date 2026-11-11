@@ -988,9 +988,8 @@ window.containers-window button.create-os-row {
   border-radius: var(--nyx-radius-small);
 }
 
-/* Below the desktop bar's strip, which can take the screen's top edge. */
 .display-view.fullscreen .display-fs-bar {
-  margin-top: 44px;
+  margin-top: 8px;
 }
 
 window.containers-window button.display-fs-exit {

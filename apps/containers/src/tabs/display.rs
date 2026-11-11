@@ -49,6 +49,9 @@ mod ffi {
 }
 
 const MOUSE_MODE_CLIENT: i32 = 2;
+/// How far from the screen's top edge, and how long, the pointer rests to bring up the fullscreen bar.
+const HOT_DEPTH: f32 = 4.0;
+const HOT_DWELL_MS: u64 = 1000;
 const CHANNEL_CLOSED: i32 = 12;
 
 pub struct Display {
@@ -79,7 +82,8 @@ pub struct Display {
     asked: Cell<(i32, i32)>,
     stable: Cell<(i32, i32, i64)>,
     fullscreen: Cell<bool>,
-    bar_hold: Cell<u32>,
+    bar_timer: RefCell<Option<glib::SourceId>>,
+    bar_motion: RefCell<Option<(gtk::Window, gtk::EventControllerMotion)>>,
     captured: Cell<bool>,
     hovered: Cell<bool>,
     release_pending: Cell<bool>,
@@ -230,7 +234,8 @@ impl Display {
             asked: Cell::new((0, 0)),
             stable: Cell::new((0, 0, 0)),
             fullscreen: Cell::new(false),
-            bar_hold: Cell::new(0),
+            bar_timer: RefCell::new(None),
+            bar_motion: RefCell::new(None),
             captured: Cell::new(false),
             hovered: Cell::new(false),
             release_pending: Cell::new(false),
@@ -574,6 +579,10 @@ impl Display {
         if self.fullscreen.get() {
             window::set_display_fullscreen(false);
         }
+        self.cancel_bar_timer();
+        if let Some((window, motion)) = self.bar_motion.borrow_mut().take() {
+            window.remove_controller(&motion);
+        }
         self.disconnect();
     }
 
@@ -707,11 +716,6 @@ impl Display {
         }
     }
 
-    fn release_capture(self: &Rc<Self>) {
-        self.drop_capture();
-        self.show_bar_for(4000);
-    }
-
     fn wire_input(self: &Rc<Self>) {
         let weak = Rc::downgrade(self);
         let motion = gtk::EventControllerMotion::new();
@@ -736,7 +740,7 @@ impl Display {
             }
             // A drag that crosses the edge keeps going until the button comes up.
             if d.buttons.get() == 0 {
-                d.release_capture();
+                d.drop_capture();
             } else {
                 d.release_pending.set(true);
             }
@@ -763,7 +767,7 @@ impl Display {
             d.send_motion(x, y);
             d.send_button(g.current_button(), false);
             if d.release_pending.get() && !d.hovered.get() && d.buttons.get() == 0 {
-                d.release_capture();
+                d.drop_capture();
             }
         });
         // A cancelled click never reports its release; don't leave the button held.
@@ -772,7 +776,7 @@ impl Display {
             let Some(d) = weak.upgrade() else { return };
             d.release_buttons();
             if d.release_pending.get() && !d.hovered.get() {
-                d.release_capture();
+                d.drop_capture();
             }
         });
         self.picture.add_controller(click);
@@ -800,7 +804,7 @@ impl Display {
             let modifier_key = matches!(keyval, gdk::Key::Control_L | gdk::Key::Control_R | gdk::Key::Alt_L | gdk::Key::Alt_R);
             // Ctrl+Alt: give the keyboard and mouse back.
             if modifier_key && ((ctrl && matches!(keyval, gdk::Key::Alt_L | gdk::Key::Alt_R)) || (alt && matches!(keyval, gdk::Key::Control_L | gdk::Key::Control_R))) {
-                d.release_capture();
+                d.drop_capture();
                 return glib::Propagation::Stop;
             }
             if ctrl && alt && matches!(keyval, gdk::Key::Return | gdk::Key::KP_Enter) {
@@ -998,44 +1002,72 @@ impl Display {
         let w = self.workload.clone();
         bar.append(&actions::power_button(&w));
         self.fs_bar.set_child(Some(&bar));
-        // Shows when the pointer comes near the top while fullscreen. The zone is deep
-        // because the desktop's own bar may take the screen's top few pixels.
-        let motion = gtk::EventControllerMotion::new();
-        let weak = Rc::downgrade(self);
-        motion.connect_motion(move |_, _, y| {
-            if let Some(d) = weak.upgrade()
-                && d.fullscreen.get()
-            {
-                if y < 80.0 {
-                    d.fs_bar.set_reveal_child(true);
-                } else if y > 150.0 && d.bar_hold.get() == 0 {
-                    d.fs_bar.set_reveal_child(false);
-                }
-            }
-        });
-        self.picture.add_controller(motion);
     }
 
-    /// Keep the fullscreen bar up for `ms`, then hide it unless the pointer is near it.
-    fn show_bar_for(self: &Rc<Self>, ms: u64) {
-        if !self.fullscreen.get() {
+    /// While fullscreen, watch the pointer over the whole window (the screen's top edge may
+    /// not be over the picture). Fullscreen is on a workspace of its own, so nothing of the
+    /// desktop covers that edge: the bar waits for the pointer to rest in a thin strip there.
+    fn watch_top_edge(self: &Rc<Self>, on: bool) {
+        self.cancel_bar_timer();
+        if let Some((window, motion)) = self.bar_motion.borrow_mut().take() {
+            window.remove_controller(&motion);
+        }
+        let Some(window) = self.picture.root().and_downcast::<gtk::Window>() else { return };
+        if !on {
             return;
         }
-        self.fs_bar.set_reveal_child(true);
-        let token = self.bar_hold.get().wrapping_add(1);
-        self.bar_hold.set(token);
+        let motion = gtk::EventControllerMotion::new();
+        motion.set_propagation_phase(gtk::PropagationPhase::Capture);
         let weak = Rc::downgrade(self);
-        glib::timeout_add_local_once(std::time::Duration::from_millis(ms), move || {
-            if let Some(d) = weak.upgrade()
-                && d.bar_hold.get() == token
-            {
-                d.bar_hold.set(0);
-                let near = d.last.get().1 < 80.0;
-                if !near {
+        motion.connect_motion(move |c, x, y| {
+            let (Some(d), Some(window)) = (weak.upgrade(), c.widget()) else { return };
+            if !d.fullscreen.get() {
+                return;
+            }
+            let (x, y, width) = (x as f32, y as f32, window.width() as f32);
+            if d.fs_bar.reveals_child() {
+                let bottom = d.fs_bar.compute_bounds(&window).map_or(0.0, |b| b.y() + b.height());
+                if y > bottom + 24.0 {
                     d.fs_bar.set_reveal_child(false);
+                }
+                return;
+            }
+            if y <= HOT_DEPTH && x >= width / 3.0 && x <= width * 2.0 / 3.0 {
+                d.arm_bar_timer();
+            } else {
+                d.cancel_bar_timer();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        motion.connect_leave(move |_| {
+            if let Some(d) = weak.upgrade() {
+                d.cancel_bar_timer();
+            }
+        });
+        window.add_controller(motion.clone());
+        *self.bar_motion.borrow_mut() = Some((window, motion));
+    }
+
+    fn arm_bar_timer(self: &Rc<Self>) {
+        if self.bar_timer.borrow().is_some() {
+            return;
+        }
+        let weak = Rc::downgrade(self);
+        let id = glib::timeout_add_local_once(std::time::Duration::from_millis(HOT_DWELL_MS), move || {
+            if let Some(d) = weak.upgrade() {
+                d.bar_timer.borrow_mut().take();
+                if d.fullscreen.get() {
+                    d.fs_bar.set_reveal_child(true);
                 }
             }
         });
+        *self.bar_timer.borrow_mut() = Some(id);
+    }
+
+    fn cancel_bar_timer(&self) {
+        if let Some(id) = self.bar_timer.borrow_mut().take() {
+            id.remove();
+        }
     }
 
     /// Leave fullscreen from outside the display (Esc, F11, the window manager).
@@ -1061,8 +1093,8 @@ impl Display {
         } else {
             self.root.remove_css_class("fullscreen");
         }
+        self.watch_top_edge(on);
         if on {
-            self.show_bar_for(3000);
             window::toast("Ctrl+Alt releases the keyboard · then Esc leaves fullscreen");
         } else {
             self.fs_bar.set_reveal_child(false);
