@@ -27,6 +27,7 @@ struct OpenTab {
 struct Ui {
     window: gtk::ApplicationWindow,
     overlay: gtk::Overlay,
+    frame: nyx_ui::frame::AppFrame,
     header: chrome::AppHeader,
     sidebar: Rc<Sidebar>,
     nav: HashMap<&'static str, NavItem>,
@@ -209,10 +210,6 @@ fn build(app: &gtk::Application) {
         .vexpand(true)
         .child(&column)
         .build();
-    let body = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    body.set_vexpand(true);
-    body.append(&sidebar.root);
-    body.append(&column_scroll);
 
     let header = chrome::app_header(&window, "package-x-generic-symbolic", "Containers");
     let collapse = widgets::bar_button("sidebar-show-symbolic", "Collapse the sidebar (Ctrl+B)");
@@ -231,14 +228,10 @@ fn build(app: &gtk::Application) {
     header.end.append(&new);
     header.end.append(&chrome::settings_button(settings_dialog::open));
 
-    let frame = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    frame.add_css_class("window-frame");
-    frame.append(&header.root);
-    frame.append(&body);
-
-    let overlay = gtk::Overlay::new();
-    overlay.set_child(Some(&frame));
-    window.set_child(Some(&overlay));
+    let frame = nyx_ui::frame::AppFrame::new(&header.root);
+    frame.set_sidebar(&sidebar.root);
+    frame.set_page(&column_scroll);
+    let overlay = frame.install(&window);
 
     install_keys(&window, &search);
     // If the window manager ends fullscreen (a keybinding, a gesture), follow it.
@@ -302,6 +295,7 @@ fn build(app: &gtk::Application) {
     let ui = Ui {
         window,
         overlay,
+        frame,
         header,
         sidebar,
         nav,
@@ -407,6 +401,12 @@ pub fn set_display_fullscreen(on: bool) {
     u.sidebar.root.set_visible(!on);
     u.tab_row.root.set_visible(!on);
     tabs::set_toolbars_visible(!on);
+    u.frame.set_flush(on);
+    if on {
+        u.frame.root.add_css_class("display-fullscreen");
+    } else {
+        u.frame.root.remove_css_class("display-fullscreen");
+    }
     if on {
         u.window.fullscreen();
     } else {

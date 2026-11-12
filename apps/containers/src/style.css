@@ -123,19 +123,6 @@ window.containers-window button.primary-button {
   padding: 2px 8px;
 }
 
-/* Blended: the table and the inspector meet without a line (the divider still drags). */
-window.containers-window paned > separator {
-  min-width: 6px;
-  background: @theme_bg;
-  background-image: none;
-  border: none;
-  box-shadow: none;
-}
-
-window.containers-window paned > separator:hover {
-  background: alpha(@theme_accent, 0.25);
-}
-
 /* The selected item's details, docked beside the table on the same surface. */
 .ops-inspector {
   padding: 12px 16px;
@@ -677,6 +664,13 @@ window.containers-window .tab-views button.segment {
 
 .display-view.fullscreen .tab-pad {
   padding: 0;
+}
+
+/* A fullscreen display fills the screen: no sheet around it. */
+window.containers-window .app-frame.display-fullscreen .app-page {
+  margin: 0;
+  border: none;
+  border-radius: 0;
 }
 
 .display-view.fullscreen .display-well {
