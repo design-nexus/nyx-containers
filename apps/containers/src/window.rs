@@ -148,6 +148,7 @@ fn build(app: &gtk::Application) {
     let sidebar = Sidebar::new();
     let mut nav = HashMap::new();
     let mut last_group = "\u{0}";
+    let mut first_heading = true;
     for s in sections.iter().filter(|s| s.nav) {
         if s.group != last_group {
             let first = last_group == "\u{0}";
@@ -161,9 +162,12 @@ fn build(app: &gtk::Application) {
                     }),
                     _ => nyx_ui::sidebar::group_label(s.group, first),
                 };
-                if let Some(heading) = label.first_child() {
-                    heading.add_css_class(&format!("section-{}", s.group.to_ascii_lowercase()));
-                }
+                // The first heading in the app's accent (Overview above it has none), the
+                // others from the theme's [sections.containers].
+                let section =
+                    if first_heading { nyx_ui::sidebar::ACCENT_SECTION.to_string() } else { s.group.to_lowercase() };
+                first_heading = false;
+                nyx_ui::sidebar::set_section(&label, &section);
                 sidebar.append(&label);
             }
             last_group = s.group;

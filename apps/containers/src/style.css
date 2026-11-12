@@ -919,23 +919,6 @@ levelbar.host-bar block.filled {
   padding-bottom: 2px;
 }
 
-/* ---------- Sidebar sections, coloured like Settings' ---------- */
-
-window.containers-window .nav-group.section-workloads {
-  color: @sec_workloads;
-  border-bottom-color: alpha(@sec_workloads, 0.35);
-}
-
-window.containers-window .nav-group.section-resources {
-  color: @sec_resources;
-  border-bottom-color: alpha(@sec_resources, 0.35);
-}
-
-window.containers-window .nav-group.section-hosts {
-  color: @sec_hosts;
-  border-bottom-color: alpha(@sec_hosts, 0.35);
-}
-
 /* ---------- Resources cards ---------- */
 
 .res-card {

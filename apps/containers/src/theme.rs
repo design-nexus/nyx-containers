@@ -25,8 +25,8 @@ pub fn install() {
     });
 }
 
-/// The theme's named swatches as GTK colours (`@sw_teal`), and the sidebar's
-/// section colours, so headings and tiles follow the theme live.
+/// The theme's named swatches as GTK colours (`@sw_teal`), so tiles follow the
+/// theme live.
 fn swatch_colors(p: &Palette) -> String {
     let swatches = nyx_theme::swatches();
     let get = |name: &str| swatches.iter().find(|(n, _)| n == name).map(|(_, c)| c.clone()).unwrap_or_else(|| p.accent.clone());
@@ -34,6 +34,5 @@ fn swatch_colors(p: &Palette) -> String {
     for name in ["blue", "violet", "pink", "red", "coral", "amber", "green", "teal", "graphite"] {
         css.push_str(&format!("@define-color sw_{name} {};\n", get(name)));
     }
-    css.push_str("@define-color sec_workloads @sw_blue;\n@define-color sec_resources @sw_teal;\n@define-color sec_hosts @sw_amber;\n");
     css
 }
