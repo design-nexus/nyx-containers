@@ -41,10 +41,13 @@ pub fn socket_candidates_from_env(
     let mut out = Vec::new();
     if let Some(runtime) = runtime_dir.filter(|s| !s.is_empty()) {
         out.push(PathBuf::from(runtime).join("docker.sock"));
+        // Rootless Podman's Docker-compatible API (the user's podman.socket).
+        out.push(PathBuf::from(runtime).join("podman/podman.sock"));
     }
     out.extend(extra);
     out.push(PathBuf::from("/var/run/docker.sock"));
     out.push(PathBuf::from("/run/docker.sock"));
+    out.push(PathBuf::from("/run/podman/podman.sock"));
     Ok(unique_keep_order(out))
 }
 
@@ -116,7 +119,7 @@ pub async fn probe_local() -> (EngineStatus, Vec<Workload>) {
             Engine::Docker,
             last_missing
                 .map(|p| format!("No Docker socket at {}.", p.display()))
-                .unwrap_or_else(|| "Docker is not available on this computer.".into()),
+                .unwrap_or_else(|| "Docker or Podman is not available on this computer.".into()),
         ),
         Vec::new(),
     )
@@ -195,8 +198,21 @@ async fn list(docker: &Docker, host: HostId) -> Result<(String, Vec<Workload>), 
             }
         })
         .collect();
-    let ver = version.as_ref().and_then(|v| v.version.clone()).unwrap_or_else(|| "Docker".into());
-    Ok((ver, workloads))
+    Ok((engine_label(version.as_ref()), workloads))
+}
+
+/// "Podman 5.4.1" when Podman answers the Docker API (its version names a Podman
+/// component), else Docker's version.
+fn engine_label(version: Option<&bollard::models::SystemVersion>) -> String {
+    let Some(v) = version else { return "Docker".into() };
+    let ver = v.version.clone().unwrap_or_default();
+    let podman = v.components.iter().flatten().any(|c| c.name.to_lowercase().contains("podman"));
+    match (podman, ver.is_empty()) {
+        (true, true) => "Podman".into(),
+        (true, false) => format!("Podman {ver}"),
+        (false, true) => "Docker".into(),
+        (false, false) => ver,
+    }
 }
 
 /// Seconds from Docker's "Up 3 days (healthy)" status; None when it isn't up.
@@ -910,6 +926,35 @@ mod tests {
         let paths = socket_candidates_from_env(None, Some("/run/user/1000"), None).unwrap();
         assert_eq!(paths[0], PathBuf::from("/run/user/1000/docker.sock"));
         assert!(paths.iter().any(|p| p == Path::new("/var/run/docker.sock")));
+    }
+
+    #[test]
+    fn rootless_podman_follows_the_user_docker_socket() {
+        let paths = socket_candidates_from_env(None, Some("/run/user/1000"), None).unwrap();
+        assert_eq!(paths[1], PathBuf::from("/run/user/1000/podman/podman.sock"));
+        assert!(paths.iter().any(|p| p == Path::new("/run/podman/podman.sock")));
+    }
+
+    #[test]
+    fn podman_names_itself() {
+        let component = |name: &str| bollard::models::SystemVersionComponents {
+            name: name.into(),
+            version: "5.4.1".into(),
+            ..Default::default()
+        };
+        let podman = bollard::models::SystemVersion {
+            version: Some("5.4.1".into()),
+            components: Some(vec![component("Podman Engine")]),
+            ..Default::default()
+        };
+        assert_eq!(engine_label(Some(&podman)), "Podman 5.4.1");
+        let docker = bollard::models::SystemVersion {
+            version: Some("28.1.1".into()),
+            components: Some(vec![component("Engine")]),
+            ..Default::default()
+        };
+        assert_eq!(engine_label(Some(&docker)), "28.1.1");
+        assert_eq!(engine_label(None), "Docker");
     }
 
     #[test]
