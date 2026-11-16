@@ -1362,7 +1362,12 @@ impl HostStrip {
             dot.set_valign(gtk::Align::Center);
             row.append(&dot);
             let detail = match &st.state {
-                crate::models::ConnState::Connected { detail } if detail.starts_with(st.engine.label()) => detail.clone(),
+                // "Podman 5.4.1" stands on its own (Podman behind the Docker API).
+                crate::models::ConnState::Connected { detail }
+                    if detail.starts_with(st.engine.label()) || detail.starts_with("Podman") =>
+                {
+                    detail.clone()
+                }
                 crate::models::ConnState::Connected { detail } => format!("{} {detail}", st.engine.label()),
                 _ => format!("{} unavailable", st.engine.label()),
             };

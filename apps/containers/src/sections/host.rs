@@ -279,7 +279,7 @@ pub fn refresh(snapshot: &Snapshot) {
         clear(&ui.engines);
         let engines: Vec<_> = snapshot.engines.iter().filter(|e| e.host == ui.host).collect();
         if engines.is_empty() {
-            ui.engines.append(&widgets::label("Looking for Docker and Incus…", "dim"));
+            ui.engines.append(&widgets::label("Looking for Docker, Podman and Incus…", "dim"));
         }
         for st in engines {
             let (dot, detail) = match &st.state {
