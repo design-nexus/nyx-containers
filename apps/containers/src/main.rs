@@ -44,7 +44,7 @@ fn main() -> glib::ExitCode {
     }
     if std::env::var_os("GSK_RENDERER").is_none() {
         // SAFETY: still single-threaded; nothing else reads the environment yet.
-        unsafe { std::env::set_var("GSK_RENDERER", "ngl") };
+        unsafe { std::env::set_var("GSK_RENDERER", "gl") };
     }
     let _ = tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env()).try_init();
 
