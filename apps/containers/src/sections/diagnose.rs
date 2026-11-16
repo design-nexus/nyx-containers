@@ -52,10 +52,15 @@ fn row(check: &DiagCheck) -> gtk::Box {
         let box_ = widgets::hbox(8);
         box_.append(&widgets::tag(status, kind));
         if !cmd.is_empty() {
-            let fix = gtk::Button::with_label("Fix");
+            // NyxOS: the Store installs it; there's no command to copy.
+            let store = cmd.starts_with("nyx-store ");
+            let fix = gtk::Button::with_label(if store { "Open Store" } else { "Fix" });
             fix.add_css_class("suggested-action");
             fix.connect_clicked(move |_| worker::fix(id));
             box_.append(&fix);
+            if store {
+                return widgets::row(check.id.title(), &check.detail, Some(box_.upcast_ref::<gtk::Widget>()));
+            }
             let copy = gtk::Button::with_label("Copy");
             let c = cmd.clone();
             copy.connect_clicked(move |_| {

@@ -168,7 +168,11 @@ pub fn quick_snapshot(w: &Workload) {
 }
 
 fn glib_stamp() -> String {
-    gtk::glib::DateTime::now_local().ok().and_then(|d| d.format("snap-%Y%m%d-%H%M").ok()).map(|s| s.to_string()).unwrap_or_else(|| "snap".into())
+    gtk::glib::DateTime::now_local()
+        .ok()
+        .and_then(|d| d.format("snap-%Y%m%d-%H%M").ok())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "snap".into())
 }
 
 pub fn confirm_delete(w: &Workload) {
@@ -177,7 +181,11 @@ pub fn confirm_delete(w: &Workload) {
         (Engine::Incus, Kind::Container) => "container",
         _ => "Docker container",
     };
-    let body = format!("Delete the {what} {} on {}? Its disk and snapshots go with it. This can't be undone.", w.name, window::host_name(w.host));
+    let body = format!(
+        "Delete the {what} {} on {}? Its disk and snapshots go with it. This can't be undone.",
+        w.name,
+        window::host_name(w.host)
+    );
     let w = w.clone();
     widgets::confirm(&format!("Delete {}?", w.name), &body, "Delete", move || run(&w, Action::Delete));
 }

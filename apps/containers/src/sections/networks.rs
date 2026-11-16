@@ -27,7 +27,12 @@ pub fn refresh(snapshot: &Snapshot, host: HostFilter, query: &str) {
     let q = query.trim().to_ascii_lowercase();
     let mut nets: Vec<_> = snapshot
         .networks(host)
-        .filter(|n| q.is_empty() || n.name.to_ascii_lowercase().contains(&q) || n.driver.to_ascii_lowercase().contains(&q) || n.members.iter().any(|m| m.to_ascii_lowercase().contains(&q)))
+        .filter(|n| {
+            q.is_empty()
+                || n.name.to_ascii_lowercase().contains(&q)
+                || n.driver.to_ascii_lowercase().contains(&q)
+                || n.members.iter().any(|m| m.to_ascii_lowercase().contains(&q))
+        })
         .collect();
     // Networks in use first, then by name.
     nets.sort_by_key(|n| (n.engine != Engine::Incus, n.host, n.members.is_empty(), n.name.to_ascii_lowercase()));
@@ -48,7 +53,8 @@ pub fn refresh(snapshot: &Snapshot, host: HostFilter, query: &str) {
             if sub.is_empty() {
                 sub.push("No IPv4 range".into());
             }
-            let attached = if n.members.is_empty() { "Nothing attached".to_string() } else { format!("{} attached", n.members.len()) };
+            let attached =
+                if n.members.is_empty() { "Nothing attached".to_string() } else { format!("{} attached", n.members.len()) };
             sub.push(attached);
             let mut facts = Vec::new();
             if let Some(v6) = &n.ipv6 {
@@ -65,7 +71,11 @@ pub fn refresh(snapshot: &Snapshot, host: HostFilter, query: &str) {
             Item {
                 group: format!("{} · {}", n.engine.label(), window::host_name(n.host)),
                 engine: n.engine,
-                icon: if n.driver == "physical" || n.driver == "macvlan" { "network-wired-symbolic" } else { "network-workgroup-symbolic" },
+                icon: if n.driver == "physical" || n.driver == "macvlan" {
+                    "network-wired-symbolic"
+                } else {
+                    "network-workgroup-symbolic"
+                },
                 color: if n.engine == Engine::Docker { "blue" } else { "green" },
                 title: n.name.clone(),
                 tags,
@@ -145,4 +155,3 @@ fn open_create() {
     });
     dialog.present();
 }
-

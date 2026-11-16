@@ -4,8 +4,7 @@
 //! you open gets a tab of its own, VMware Workstation style.
 
 use crate::models::{
-    DiagReport, HostFilter, HostHealth, HostId, ImageDetail, InstanceSnap, LiveSample, LogChunk, Snapshot,
-    WorkloadDetail,
+    DiagReport, HostFilter, HostHealth, HostId, ImageDetail, InstanceSnap, LiveSample, LogChunk, Snapshot, WorkloadDetail,
 };
 use crate::sections::{self, Section};
 use crate::tabs::{self, Target};
@@ -157,15 +156,14 @@ fn build(app: &gtk::Application) {
                     "Workloads" => nyx_ui::sidebar::group_label_with_add(s.group, first, "New workload (Ctrl+N)", || {
                         crate::sections::create::open(None)
                     }),
-                    "Hosts" => nyx_ui::sidebar::group_label_with_add(s.group, first, "Add a remote host", || {
-                        navigate("connections")
-                    }),
+                    "Hosts" => {
+                        nyx_ui::sidebar::group_label_with_add(s.group, first, "Add a remote host", || navigate("connections"))
+                    }
                     _ => nyx_ui::sidebar::group_label(s.group, first),
                 };
                 // The first heading in the app's accent (Overview above it has none), the
                 // others from the theme's [sections.containers].
-                let section =
-                    if first_heading { nyx_ui::sidebar::ACCENT_SECTION.to_string() } else { s.group.to_lowercase() };
+                let section = if first_heading { nyx_ui::sidebar::ACCENT_SECTION.to_string() } else { s.group.to_lowercase() };
                 first_heading = false;
                 nyx_ui::sidebar::set_section(&label, &section);
                 sidebar.append(&label);
@@ -282,11 +280,19 @@ fn build(app: &gtk::Application) {
             }
             let mut child = parts[6].1.first_child();
             while let Some(c) = child {
-                eprintln!("nyx-containers: min width main/{} = {}", c.widget_name(), c.measure(gtk::Orientation::Horizontal, -1).0);
+                eprintln!(
+                    "nyx-containers: min width main/{} = {}",
+                    c.widget_name(),
+                    c.measure(gtk::Orientation::Horizontal, -1).0
+                );
                 if let Some(inner) = c.first_child() {
                     let mut g = Some(inner);
                     while let Some(x) = g {
-                        eprintln!("nyx-containers:   {} = {}", x.css_classes().join("."), x.measure(gtk::Orientation::Horizontal, -1).0);
+                        eprintln!(
+                            "nyx-containers:   {} = {}",
+                            x.css_classes().join("."),
+                            x.measure(gtk::Orientation::Horizontal, -1).0
+                        );
                         g = x.next_sibling();
                     }
                 }
@@ -951,7 +957,8 @@ pub fn overlay_card(title: &str, width: i32) -> (gtk::Box, Rc<dyn Fn()>) {
     let (c, card_ref) = (close.clone(), card.clone());
     click.connect_released(move |g, _, x, y| {
         let Some(v) = g.widget() else { return };
-        let inside = card_ref.compute_bounds(&v).is_some_and(|b| b.contains_point(&gtk::graphene::Point::new(x as f32, y as f32)));
+        let inside =
+            card_ref.compute_bounds(&v).is_some_and(|b| b.contains_point(&gtk::graphene::Point::new(x as f32, y as f32)));
         if !inside {
             c();
         }

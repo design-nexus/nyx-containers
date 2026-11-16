@@ -499,7 +499,8 @@ fn items(ui: &PageUi, snapshot: &Snapshot, host: HostFilter, query: &str) -> Vec
             .filter(|w| w.engine == Engine::Docker && w.host == stack.host && w.project.as_deref() == Some(stack.name.as_str()))
             .map(|w| (*w).clone())
             .collect();
-        let name_hit = q.is_empty() || stack.name.to_ascii_lowercase().contains(&q) || services.iter().any(|w| matches_query(w, &q));
+        let name_hit =
+            q.is_empty() || stack.name.to_ascii_lowercase().contains(&q) || services.iter().any(|w| matches_query(w, &q));
         let state_ok = match filter {
             Filter::All | Filter::Docker => true,
             Filter::Running => stack.running > 0,
@@ -1145,11 +1146,10 @@ fn build_stack_actions(card: &Rc<Card>, stack: &Stack, services: &[Workload], ex
     edit.connect_clicked(move |_| actions::open_stack(&s2, Some("compose")));
     card.acts.append(&edit);
     card.acts.append(&actions::stack_power_button(stack));
-    let toggle = widgets::icon_button(if expanded { "pan-up-symbolic" } else { "pan-down-symbolic" }, if expanded {
-        "Hide the services"
-    } else {
-        "Show the services"
-    });
+    let toggle = widgets::icon_button(
+        if expanded { "pan-up-symbolic" } else { "pan-down-symbolic" },
+        if expanded { "Hide the services" } else { "Show the services" },
+    );
     let key = format!("stack|{}|{}", stack.host.label(), stack.name);
     toggle.connect_clicked(move |_| {
         let k = key.clone();
@@ -1255,7 +1255,9 @@ fn paint_live(card: &Card) {
         Item::Stack(_, services) => (services.iter().map(Workload::key).collect(), None),
     };
     let (cpu_vals, mem_vals) = if keys.len() == 1 {
-        history::get(&keys[0]).map(|h| (h.cpu.iter().copied().collect::<Vec<_>>(), h.mem.iter().copied().collect::<Vec<_>>())).unwrap_or_default()
+        history::get(&keys[0])
+            .map(|h| (h.cpu.iter().copied().collect::<Vec<_>>(), h.mem.iter().copied().collect::<Vec<_>>()))
+            .unwrap_or_default()
     } else {
         history::total_series(&keys)
     };
@@ -1278,11 +1280,7 @@ fn paint_live(card: &Card) {
     );
     let mem_now = mem_vals.last().copied();
     let scale = limit.map(|l| l as f64).unwrap_or_else(|| mem_vals.iter().copied().max().unwrap_or(1) as f64 * 1.25).max(1.0);
-    card.mem.set(
-        &mem_text(mem_now, limit),
-        mem_vals.iter().map(|v| *v as f64 / scale).collect(),
-        limit.map(|_| 0.92),
-    );
+    card.mem.set(&mem_text(mem_now, limit), mem_vals.iter().map(|v| *v as f64 / scale).collect(), limit.map(|_| 0.92));
     for (key, cpu, mem) in card.svc_live.borrow().iter() {
         let h = history::get(key);
         let last = h.as_ref().and_then(|h| h.last.clone());
@@ -1330,11 +1328,7 @@ impl HostStrip {
         let health = HEALTH.with(|h| h.borrow().iter().find(|x| x.host == host).cloned());
         match &health {
             Some(h) => {
-                self.cpu.set(
-                    &h.cpu.map(|c| format!("{c:.0}%")).unwrap_or_else(|| "—".into()),
-                    h.cpu_hist.clone(),
-                    None,
-                );
+                self.cpu.set(&h.cpu.map(|c| format!("{c:.0}%")).unwrap_or_else(|| "—".into()), h.cpu_hist.clone(), None);
                 self.mem.set(&mem_text(h.mem_used, h.mem_total), h.mem_hist.clone(), None);
                 let free = match (h.disk_used, h.disk_total) {
                     (Some(u), Some(t)) if t >= u => format!("{} free", short_bytes(t - u)),

@@ -116,7 +116,8 @@ pub fn apply(key: &str, result: Result<Value, String>) {
             let ip = n.get("IPAddress").map(s).filter(|x| !x.is_empty()).unwrap_or_else(|| "no address".into());
             let gw = n.get("Gateway").map(s).filter(|x| !x.is_empty());
             let mac = n.get("MacAddress").map(s).filter(|x| !x.is_empty());
-            let desc = [Some(ip.clone()), gw.map(|g| format!("gateway {g}")), mac].into_iter().flatten().collect::<Vec<_>>().join(" · ");
+            let desc =
+                [Some(ip.clone()), gw.map(|g| format!("gateway {g}")), mac].into_iter().flatten().collect::<Vec<_>>().join(" · ");
             net_rows.push(widgets::row(name, &desc, Some(copy_button(ip).upcast_ref())));
         }
     }
@@ -147,7 +148,12 @@ pub fn apply(key: &str, result: Result<Value, String>) {
     view.set_left_margin(14);
     view.set_top_margin(10);
     view.set_bottom_margin(10);
-    let well = gtk::ScrolledWindow::builder().min_content_height(260).max_content_height(420).propagate_natural_height(true).child(&view).build();
+    let well = gtk::ScrolledWindow::builder()
+        .min_content_height(260)
+        .max_content_height(420)
+        .propagate_natural_height(true)
+        .child(&view)
+        .build();
     well.add_css_class("tab-well");
     body.append(&well);
 }

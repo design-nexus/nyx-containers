@@ -1,7 +1,7 @@
 //! Containers — Incus and Docker management for Omarchy.
 
-mod control;
 mod cmd;
+mod control;
 mod engines;
 mod history;
 mod models;

@@ -28,7 +28,16 @@ pub struct Item {
 
 impl Item {
     fn sig(&self) -> String {
-        format!("{}|{}|{:?}|{}|{:?}|{:?}|{:?}", self.group, self.title, self.tags, self.sub, self.chips, self.facts, self.bar.map(|b| (b * 1000.0) as i64))
+        format!(
+            "{}|{}|{:?}|{}|{:?}|{:?}|{:?}",
+            self.group,
+            self.title,
+            self.tags,
+            self.sub,
+            self.chips,
+            self.facts,
+            self.bar.map(|b| (b * 1000.0) as i64)
+        )
     }
 }
 
@@ -40,11 +49,7 @@ pub struct ResPage {
     sig: RefCell<String>,
 }
 
-pub fn build(
-    page: &crate::widgets::Page,
-    empty: (&str, &str, &str),
-    primary: Option<(&str, &str, Rc<dyn Fn()>)>,
-) -> Rc<ResPage> {
+pub fn build(page: &crate::widgets::Page, empty: (&str, &str, &str), primary: Option<(&str, &str, Rc<dyn Fn()>)>) -> Rc<ResPage> {
     page.body.add_css_class("cards-page");
     let tools = widgets::hbox(6);
     tools.add_css_class("cards-tools");
@@ -65,7 +70,13 @@ pub fn build(
     let empty = widgets::empty_state(empty.0, empty.1, empty.2, None);
     empty.set_visible(false);
     page.body.append(&empty);
-    let ui = Rc::new(ResPage { list, empty, filter: Cell::new(None), chips: RefCell::new(Vec::new()), sig: RefCell::new(String::new()) });
+    let ui = Rc::new(ResPage {
+        list,
+        empty,
+        filter: Cell::new(None),
+        chips: RefCell::new(Vec::new()),
+        sig: RefCell::new(String::new()),
+    });
     let mut first: Option<gtk::ToggleButton> = None;
     for (engine, label) in [(None, "All"), (Some(Engine::Docker), "Docker"), (Some(Engine::Incus), "Incus")] {
         let b = gtk::ToggleButton::new();

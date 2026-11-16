@@ -171,7 +171,6 @@ impl OpsTable {
         self.empty.set_visible(n == 0);
         self.header.set_visible(n > 0);
     }
-
 }
 
 impl Clone for OpsTable {

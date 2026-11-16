@@ -111,7 +111,8 @@ pub fn open_editor(existing: Option<Stack>) {
 
     let local_only = existing.as_ref().is_some_and(|s| s.host != HostId::Local);
     if local_only {
-        let note = widgets::label("This stack is on the remote host. Save writes a local file; Deploy stays on this computer.", "dim");
+        let note =
+            widgets::label("This stack is on the remote host. Save writes a local file; Deploy stays on this computer.", "dim");
         note.set_wrap(true);
         note.set_xalign(0.0);
         card.append(&note);

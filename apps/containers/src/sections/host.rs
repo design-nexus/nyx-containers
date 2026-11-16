@@ -215,7 +215,11 @@ fn build(page: &Page, host: HostId) {
     let show = gtk::Button::with_label("Show what runs here");
     show.set_halign(gtk::Align::Start);
     show.connect_clicked(move |_| {
-        window::set_host(if host == HostId::Local { crate::models::HostFilter::Local } else { crate::models::HostFilter::Remote });
+        window::set_host(if host == HostId::Local {
+            crate::models::HostFilter::Local
+        } else {
+            crate::models::HostFilter::Remote
+        });
         window::navigate("overview");
     });
     content.append(&show);
@@ -284,7 +288,9 @@ pub fn refresh(snapshot: &Snapshot) {
         for st in engines {
             let (dot, detail) = match &st.state {
                 ConnState::Connected { detail } => ("run", detail.clone()),
-                ConnState::Unavailable { reason } | ConnState::Permission { reason } | ConnState::Insecure { reason } => ("err", reason.clone()),
+                ConnState::Unavailable { reason } | ConnState::Permission { reason } | ConnState::Insecure { reason } => {
+                    ("err", reason.clone())
+                }
                 ConnState::Unconfigured => ("off", "Not set up for this host".into()),
                 ConnState::Untrusted { .. } => ("err", "Its identity isn't trusted yet".into()),
             };
@@ -301,7 +307,10 @@ pub fn refresh(snapshot: &Snapshot) {
             let title = widgets::label(st.engine.label(), "host-engine-name");
             title.set_xalign(0.0);
             text.append(&title);
-            let sub = widgets::label(&format!("{detail} · {count} workload{}", if count == 1 { "" } else { "s" }), "dim host-engine-sub");
+            let sub = widgets::label(
+                &format!("{detail} · {count} workload{}", if count == 1 { "" } else { "s" }),
+                "dim host-engine-sub",
+            );
             sub.set_xalign(0.0);
             sub.set_ellipsize(gtk::pango::EllipsizeMode::End);
             text.append(&sub);
@@ -393,11 +402,17 @@ fn paint_info(ui: &Rc<HostPage>) {
         name.set_hexpand(true);
         name.set_xalign(0.0);
         row.append(&name);
-        row.append(&widgets::label(&format!("{} in images, containers, volumes and cache", short_bytes(total)), "dim host-engine-sub"));
+        row.append(&widgets::label(
+            &format!("{} in images, containers, volumes and cache", short_bytes(total)),
+            "dim host-engine-sub",
+        ));
         ui.storage.append(&row);
     }
 
-    let sig = format!("{:?}", info.docker.map(|d| (d.images.reclaimable, d.build_cache.reclaimable, d.containers.reclaimable, d.volumes.reclaimable)));
+    let sig = format!(
+        "{:?}",
+        info.docker.map(|d| (d.images.reclaimable, d.build_cache.reclaimable, d.containers.reclaimable, d.volumes.reclaimable))
+    );
     if *ui.cleanup_sig.borrow() == sig {
         return;
     }
@@ -429,7 +444,13 @@ fn paint_info(ui: &Rc<HostPage>) {
         Prune::Images,
         "Click again to delete them",
     ));
-    list.append(&row("Build cache", "Layers kept from image builds".into(), d.build_cache, Prune::BuildCache, "Click again to clear it"));
+    list.append(&row(
+        "Build cache",
+        "Layers kept from image builds".into(),
+        d.build_cache,
+        Prune::BuildCache,
+        "Click again to clear it",
+    ));
     list.append(&row(
         "Stopped containers",
         format!("{} stopped", d.containers.count.saturating_sub(d.containers.active)),
@@ -457,15 +478,27 @@ fn paint_checks(ui: &HostPage) {
     let exists = |p: &str| std::path::Path::new(p).exists();
     let on_path = |bin: &str| std::env::var_os("PATH").is_some_and(|p| std::env::split_paths(&p).any(|d| d.join(bin).exists()));
     let read = |p: &str| std::fs::read_to_string(p).map(|s| s.trim().to_string()).unwrap_or_default();
-    let nested = ["/sys/module/kvm_intel/parameters/nested", "/sys/module/kvm_amd/parameters/nested"].iter().any(|p| matches!(read(p).as_str(), "Y" | "1"));
+    let nested = ["/sys/module/kvm_intel/parameters/nested", "/sys/module/kvm_amd/parameters/nested"]
+        .iter()
+        .any(|p| matches!(read(p).as_str(), "Y" | "1"));
     let iommu = std::fs::read_dir("/sys/kernel/iommu_groups").map(|d| d.count() > 0).unwrap_or(false);
     let checks = [
         ("KVM", exists("/dev/kvm"), "Hardware virtualization is off in the firmware, or KVM isn't loaded."),
         ("Nested virtualization", nested, "VMs can't run VMs or Docker Desktop inside."),
         ("IOMMU (GPU and USB passthrough)", iommu, "Turn on VT-d or AMD-Vi in the firmware, and intel_iommu=on."),
-        ("virtiofs shared folders", on_path("virtiofsd") || exists("/usr/lib/virtiofsd") || exists("/usr/libexec/virtiofsd"), "Install virtiofsd for fast shared folders in VMs."),
+        (
+            "virtiofs shared folders",
+            on_path("virtiofsd") || exists("/usr/lib/virtiofsd") || exists("/usr/libexec/virtiofsd"),
+            "Install virtiofsd for fast shared folders in VMs.",
+        ),
         ("Virtual TPM", on_path("swtpm"), "Install swtpm for Windows 11 and measured boot."),
-        ("UEFI firmware", ["/usr/share/edk2/x64/OVMF_CODE.4m.fd", "/usr/share/edk2/x64/OVMF_CODE.fd", "/usr/share/OVMF", "/usr/share/ovmf"].iter().any(|p| exists(p)), "Install edk2-ovmf for UEFI and Secure Boot."),
+        (
+            "UEFI firmware",
+            ["/usr/share/edk2/x64/OVMF_CODE.4m.fd", "/usr/share/edk2/x64/OVMF_CODE.fd", "/usr/share/OVMF", "/usr/share/ovmf"]
+                .iter()
+                .any(|p| exists(p)),
+            "Install edk2-ovmf for UEFI and Secure Boot.",
+        ),
     ];
     for (title, ok, why) in checks {
         let row = widgets::hbox(10);

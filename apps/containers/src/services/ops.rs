@@ -2,8 +2,8 @@
 
 use crate::engines::{docker, incus};
 use crate::models::{
-    Action, CreateSpec, Engine, HostId, ImageDetail, InstanceSnap, LogChunk, NetSpec, SnapAction, TermEvent,
-    TermKind, VolumeSpec, WorkloadDetail,
+    Action, CreateSpec, Engine, HostId, ImageDetail, InstanceSnap, LogChunk, NetSpec, SnapAction, TermEvent, TermKind,
+    VolumeSpec, WorkloadDetail,
 };
 use crate::prefs::RemoteProfile;
 use tokio::sync::{mpsc, watch};

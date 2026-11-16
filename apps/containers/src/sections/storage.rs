@@ -55,7 +55,9 @@ pub fn refresh(snapshot: &Snapshot, host: HostFilter, query: &str) {
             let info = pools.iter().find(|p| p.name == name);
             let group = format!("Pool {name} · {}", window::host_name(h));
             let (frac, sub) = match info.and_then(|p| p.used.zip(p.total)) {
-                Some((u, t)) if t > 0 => (Some(u as f64 / t as f64), format!("{} free of {}", short_bytes(t.saturating_sub(u)), short_bytes(t))),
+                Some((u, t)) if t > 0 => {
+                    (Some(u as f64 / t as f64), format!("{} free of {}", short_bytes(t.saturating_sub(u)), short_bytes(t)))
+                }
                 _ => (None, String::new()),
             };
             let vols: Vec<_> = snapshot
@@ -101,7 +103,11 @@ pub fn refresh(snapshot: &Snapshot, host: HostFilter, query: &str) {
                     color,
                     title,
                     tags,
-                    sub: [what.to_string(), if size == "—" { String::new() } else { size }].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" · "),
+                    sub: [what.to_string(), if size == "—" { String::new() } else { size }]
+                        .into_iter()
+                        .filter(|s| !s.is_empty())
+                        .collect::<Vec<_>>()
+                        .join(" · "),
                     chips: Vec::new(),
                     facts: Vec::new(),
                     bar: None,
@@ -139,7 +145,11 @@ pub fn refresh(snapshot: &Snapshot, host: HostFilter, query: &str) {
                 color: "blue",
                 title,
                 tags,
-                sub: [v.kind.clone(), if v.size_label == "—" { String::new() } else { v.size_label.clone() }].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" · "),
+                sub: [v.kind.clone(), if v.size_label == "—" { String::new() } else { v.size_label.clone() }]
+                    .into_iter()
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" · "),
                 chips: Vec::new(),
                 facts: Vec::new(),
                 bar: None,
@@ -206,15 +216,11 @@ fn open_create() {
             return;
         }
         let pool_text = pool.text().trim().to_string();
-        let pool = if engine == Engine::Incus {
-            Some(if pool_text.is_empty() { "default".into() } else { pool_text })
-        } else {
-            None
-        };
+        let pool =
+            if engine == Engine::Incus { Some(if pool_text.is_empty() { "default".into() } else { pool_text }) } else { None };
         window::toast(&format!("Creating {n} on {}…", window::host_name(host)));
         worker::create_volume(VolumeSpec { host, engine, name: n, pool });
         d.close();
     });
     dialog.present();
 }
-

@@ -159,7 +159,12 @@ pub fn open(kind: Option<Kind>) {
     env.set_size_request(-1, 72);
     env.add_css_class("create-env");
     let restart = widgets::dropdown(
-        &widgets::opts(&[("no", "Never"), ("unless-stopped", "Unless stopped"), ("always", "Always"), ("on-failure", "When it fails")]),
+        &widgets::opts(&[
+            ("no", "Never"),
+            ("unless-stopped", "Unless stopped"),
+            ("always", "Always"),
+            ("on-failure", "When it fails"),
+        ]),
         "unless-stopped",
     );
     let docker_name = gtk::Entry::new();
@@ -228,7 +233,9 @@ pub fn open(kind: Option<Kind>) {
         _ => What::Vm,
     };
     let mut first: Option<gtk::ToggleButton> = None;
-    for (what, label) in [(What::Vm, "Virtual machine"), (What::Lxc, "Linux container"), (What::Docker, "Docker"), (What::Stack, "Compose stack")] {
+    for (what, label) in
+        [(What::Vm, "Virtual machine"), (What::Lxc, "Linux container"), (What::Docker, "Docker"), (What::Stack, "Compose stack")]
+    {
         let b = gtk::ToggleButton::with_label(label);
         b.add_css_class("segment");
         if let Some(f) = &first {
@@ -516,7 +523,8 @@ fn spec(f: &Form) -> Result<CreateSpec, String> {
             if let Some(bad) = env.iter().find(|l| !l.contains('=')) {
                 return Err(format!("“{bad}” needs KEY=value."));
             }
-            let restart = ["no", "unless-stopped", "always", "on-failure"].get(f.restart.selected() as usize).copied().unwrap_or("no");
+            let restart =
+                ["no", "unless-stopped", "always", "on-failure"].get(f.restart.selected() as usize).copied().unwrap_or("no");
             Ok(CreateSpec {
                 host,
                 engine: Engine::Docker,

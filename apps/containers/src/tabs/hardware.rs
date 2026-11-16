@@ -272,21 +272,44 @@ fn describe(name: &str, d: &BTreeMap<String, String>) -> (&'static str, String, 
         "disk" if get("path") == "/" => (
             "drive-harddisk-symbolic",
             "Root disk".into(),
-            [get("size").parse::<u64>().ok().map(short_bytes).or(Some(get("size"))).filter(|s| !s.is_empty()), Some(format!("pool {}", get("pool")))]
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>()
-                .join(" · "),
+            [
+                get("size").parse::<u64>().ok().map(short_bytes).or(Some(get("size"))).filter(|s| !s.is_empty()),
+                Some(format!("pool {}", get("pool"))),
+            ]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" · "),
         ),
-        "disk" if get("source").to_ascii_lowercase().ends_with(".iso") => {
-            ("media-optical-symbolic", "CD/DVD".into(), std::path::Path::new(&get("source")).file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default())
+        "disk" if get("source").to_ascii_lowercase().ends_with(".iso") => (
+            "media-optical-symbolic",
+            "CD/DVD".into(),
+            std::path::Path::new(&get("source")).file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default(),
+        ),
+        "disk" if !get("pool").is_empty() => {
+            ("drive-harddisk-symbolic", name.to_string(), format!("Volume {} · {}", get("source"), get("path")))
         }
-        "disk" if !get("pool").is_empty() => ("drive-harddisk-symbolic", name.to_string(), format!("Volume {} · {}", get("source"), get("path"))),
-        "disk" => ("folder-symbolic", "Shared folder".into(), format!("{} → {}", tilde(&get("source")), if get("path").is_empty() { "mount tag ".to_string() + name } else { get("path") })),
-        "nic" => ("network-wired-symbolic", name.to_string(), [get("network"), get("parent"), get("hwaddr")].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" · ")),
+        "disk" => (
+            "folder-symbolic",
+            "Shared folder".into(),
+            format!(
+                "{} → {}",
+                tilde(&get("source")),
+                if get("path").is_empty() { "mount tag ".to_string() + name } else { get("path") }
+            ),
+        ),
+        "nic" => (
+            "network-wired-symbolic",
+            name.to_string(),
+            [get("network"), get("parent"), get("hwaddr")].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" · "),
+        ),
         "proxy" => ("mail-forward-symbolic", "Port forward".into(), format!("{} → {}", get("listen"), get("connect"))),
         "usb" => ("media-removable-symbolic", "USB device".into(), format!("{}:{}", get("vendorid"), get("productid"))),
-        "gpu" => ("video-display-symbolic", "GPU".into(), [get("gputype"), get("pci"), get("id")].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" · ")),
+        "gpu" => (
+            "video-display-symbolic",
+            "GPU".into(),
+            [get("gputype"), get("pci"), get("id")].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" · "),
+        ),
         "tpm" => ("security-high-symbolic", "TPM".into(), "Virtual TPM 2.0".into()),
         other => ("application-x-firmware-symbolic", name.to_string(), other.to_string()),
     }
@@ -322,7 +345,9 @@ impl Editor {
         let text = match (n, self.busy.get()) {
             (_, true) => "Saving…".to_string(),
             (0, _) => "No changes".to_string(),
-            (n, _) if running && vm => format!("{n} change{} · some take effect when {} restarts", if n == 1 { "" } else { "s" }, self.name),
+            (n, _) if running && vm => {
+                format!("{n} change{} · some take effect when {} restarts", if n == 1 { "" } else { "s" }, self.name)
+            }
             (n, _) => format!("{n} change{}", if n == 1 { "" } else { "s" }),
         };
         for l in self.pending.borrow().iter() {
@@ -453,7 +478,13 @@ impl Editor {
         let cpu_text = if allowance.is_empty() { cpu_text } else { format!("{cpu_text} · limit {allowance}") };
         self.list.append(&self.row("cpu", "computer-symbolic", "Processors", &cpu_text, None));
         let mem = self.config("limits.memory");
-        self.list.append(&self.row("mem", "media-flash-symbolic", "Memory", if mem.is_empty() { "No limit" } else { &mem }, None));
+        self.list.append(&self.row(
+            "mem",
+            "media-flash-symbolic",
+            "Memory",
+            if mem.is_empty() { "No limit" } else { &mem },
+            None,
+        ));
         let devices = self.all_devices();
         let mut last = "";
         for (name, dev, own) in devices {
@@ -537,7 +568,16 @@ impl Editor {
             t.connect_toggled(move |_| {
                 let Some(e) = w.upgrade() else { return };
                 let on: Vec<usize> = all.borrow().iter().enumerate().filter(|(_, t)| t.is_active()).map(|(i, _)| i).collect();
-                let value = if on.is_empty() { e.orig.borrow().as_ref().and_then(|o| o.config.get("limits.cpu").cloned()).filter(|v| v.parse::<u32>().is_ok()).unwrap_or_else(|| "2".into()) } else { ranges(&on) };
+                let value = if on.is_empty() {
+                    e.orig
+                        .borrow()
+                        .as_ref()
+                        .and_then(|o| o.config.get("limits.cpu").cloned())
+                        .filter(|v| v.parse::<u32>().is_ok())
+                        .unwrap_or_else(|| "2".into())
+                } else {
+                    ranges(&on)
+                };
                 e.set_config("limits.cpu", &value);
                 e.paint_list();
             });
@@ -568,18 +608,27 @@ impl Editor {
         self.form.append(&widgets::row("CPU limit", "The most it may use of its cores.", Some(allowance.upcast_ref())));
 
         let prio = self.config("limits.cpu.priority").parse::<i32>().unwrap_or(5);
-        let current = if prio <= 3 { "low" } else if prio >= 8 { "high" } else { "normal" };
+        let current = if prio <= 3 {
+            "low"
+        } else if prio >= 8 {
+            "high"
+        } else {
+            "normal"
+        };
         let w = Rc::downgrade(self);
         let seg = widgets::segmented(
             &[("low".into(), "Low".into()), ("normal".into(), "Normal".into()), ("high".into(), "High".into())],
             current,
             move |id| {
                 if let Some(e) = w.upgrade() {
-                    e.set_config("limits.cpu.priority", match id.as_str() {
-                        "low" => "2",
-                        "high" => "9",
-                        _ => "",
-                    });
+                    e.set_config(
+                        "limits.cpu.priority",
+                        match id.as_str() {
+                            "low" => "2",
+                            "high" => "9",
+                            _ => "",
+                        },
+                    );
                 }
             },
         );
@@ -598,7 +647,16 @@ impl Editor {
         spin.connect_value_changed(move |s| {
             if let Some(e) = w.upgrade() {
                 let v = s.value();
-                e.set_config("limits.memory", &if v <= 0.0 { String::new() } else if v.fract() == 0.0 { format!("{v:.0}GiB") } else { format!("{:.0}MiB", v * 1024.0) });
+                e.set_config(
+                    "limits.memory",
+                    &if v <= 0.0 {
+                        String::new()
+                    } else if v.fract() == 0.0 {
+                        format!("{v:.0}GiB")
+                    } else {
+                        format!("{:.0}MiB", v * 1024.0)
+                    },
+                );
                 e.paint_list();
             }
         });
@@ -632,7 +690,8 @@ impl Editor {
                 let (w, n) = (Rc::downgrade(self), name.to_string());
                 move || {
                     if let Some(e) = w.upgrade() {
-                        let from_profile = e.draft.borrow().expanded_devices.contains_key(&n) && !e.orig.borrow().as_ref().is_some_and(|o| o.devices.contains_key(&n));
+                        let from_profile = e.draft.borrow().expanded_devices.contains_key(&n)
+                            && !e.orig.borrow().as_ref().is_some_and(|o| o.devices.contains_key(&n));
                         if from_profile {
                             window::toast("This device comes from a profile; change the profile to remove it.");
                             return;
@@ -665,7 +724,11 @@ impl Editor {
                 }
             });
             self.form.append(&widgets::row("Size", "Disks can grow, not shrink.", Some(entry.upcast_ref())));
-            self.form.append(&widgets::row("Storage pool", "", Some(widgets::label(dev.get("pool").map(String::as_str).unwrap_or("—"), "dim").upcast_ref())));
+            self.form.append(&widgets::row(
+                "Storage pool",
+                "",
+                Some(widgets::label(dev.get("pool").map(String::as_str).unwrap_or("—"), "dim").upcast_ref()),
+            ));
             return;
         }
         let bools = ["readonly", "shift", "nat", "required"];
@@ -722,78 +785,104 @@ impl Editor {
         let vm = self.orig.borrow().as_ref().is_some_and(|o| o.vm);
         let mut out = Vec::new();
         let w = Rc::downgrade(self);
-        out.push(nyx_ui::menu::item("Shared folder…", move || {
-            let Some(e) = w.upgrade() else { return };
-            let chooser = gtk::FileDialog::new();
-            chooser.set_title("Folder to share");
-            let w2 = Rc::downgrade(&e);
-            chooser.select_folder(window::window().as_ref(), None::<&gtk::gio::Cancellable>, move |r| {
-                if let (Some(e), Ok(f)) = (w2.upgrade(), r)
-                    && let Some(path) = f.path()
-                {
-                    let base = path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "share".into());
-                    let mut dev = BTreeMap::new();
-                    dev.insert("type".into(), "disk".into());
-                    dev.insert("source".into(), path.display().to_string());
-                    dev.insert("path".into(), format!("/mnt/{base}"));
-                    if !vm {
-                        dev.insert("shift".into(), "true".into());
-                    }
-                    e.add_device(&sanitize(&base), dev);
-                }
-            });
-        }).icon("folder-symbolic"));
-        if vm {
-            let w = Rc::downgrade(self);
-            out.push(nyx_ui::menu::item("CD/DVD image (ISO)…", move || {
+        out.push(
+            nyx_ui::menu::item("Shared folder…", move || {
                 let Some(e) = w.upgrade() else { return };
                 let chooser = gtk::FileDialog::new();
-                chooser.set_title("ISO image");
+                chooser.set_title("Folder to share");
                 let w2 = Rc::downgrade(&e);
-                chooser.open(window::window().as_ref(), None::<&gtk::gio::Cancellable>, move |r| {
+                chooser.select_folder(window::window().as_ref(), None::<&gtk::gio::Cancellable>, move |r| {
                     if let (Some(e), Ok(f)) = (w2.upgrade(), r)
                         && let Some(path) = f.path()
                     {
+                        let base = path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "share".into());
                         let mut dev = BTreeMap::new();
                         dev.insert("type".into(), "disk".into());
                         dev.insert("source".into(), path.display().to_string());
-                        dev.insert("boot.priority".into(), "10".into());
-                        e.add_device("iso", dev);
+                        dev.insert("path".into(), format!("/mnt/{base}"));
+                        if !vm {
+                            dev.insert("shift".into(), "true".into());
+                        }
+                        e.add_device(&sanitize(&base), dev);
                     }
                 });
-            }).icon("media-optical-symbolic"));
+            })
+            .icon("folder-symbolic"),
+        );
+        if vm {
+            let w = Rc::downgrade(self);
+            out.push(
+                nyx_ui::menu::item("CD/DVD image (ISO)…", move || {
+                    let Some(e) = w.upgrade() else { return };
+                    let chooser = gtk::FileDialog::new();
+                    chooser.set_title("ISO image");
+                    let w2 = Rc::downgrade(&e);
+                    chooser.open(window::window().as_ref(), None::<&gtk::gio::Cancellable>, move |r| {
+                        if let (Some(e), Ok(f)) = (w2.upgrade(), r)
+                            && let Some(path) = f.path()
+                        {
+                            let mut dev = BTreeMap::new();
+                            dev.insert("type".into(), "disk".into());
+                            dev.insert("source".into(), path.display().to_string());
+                            dev.insert("boot.priority".into(), "10".into());
+                            e.add_device("iso", dev);
+                        }
+                    });
+                })
+                .icon("media-optical-symbolic"),
+            );
         } else {
             let w = Rc::downgrade(self);
-            out.push(nyx_ui::menu::item("Port forward…", move || {
-                let Some(e) = w.upgrade() else { return };
-                let w2 = Rc::downgrade(&e);
-                widgets::ask_text("Forward a port", "Host port, then the port inside (8080 or 8080:80).", "", "Add", move |text| {
-                    let Some(e) = w2.upgrade() else { return };
-                    let (h, g) = text.split_once(':').map(|(a, b)| (a.trim().to_string(), b.trim().to_string())).unwrap_or((text.trim().to_string(), text.trim().to_string()));
-                    if h.parse::<u16>().is_err() || g.parse::<u16>().is_err() {
-                        window::toast("Use a port number, or host:guest.");
-                        return;
-                    }
-                    let mut dev = BTreeMap::new();
-                    dev.insert("type".into(), "proxy".into());
-                    dev.insert("listen".into(), format!("tcp:0.0.0.0:{h}"));
-                    dev.insert("connect".into(), format!("tcp:127.0.0.1:{g}"));
-                    e.add_device(&format!("port{h}"), dev);
-                });
-            }).icon("mail-forward-symbolic"));
+            out.push(
+                nyx_ui::menu::item("Port forward…", move || {
+                    let Some(e) = w.upgrade() else { return };
+                    let w2 = Rc::downgrade(&e);
+                    widgets::ask_text(
+                        "Forward a port",
+                        "Host port, then the port inside (8080 or 8080:80).",
+                        "",
+                        "Add",
+                        move |text| {
+                            let Some(e) = w2.upgrade() else { return };
+                            let (h, g) = text
+                                .split_once(':')
+                                .map(|(a, b)| (a.trim().to_string(), b.trim().to_string()))
+                                .unwrap_or((text.trim().to_string(), text.trim().to_string()));
+                            if h.parse::<u16>().is_err() || g.parse::<u16>().is_err() {
+                                window::toast("Use a port number, or host:guest.");
+                                return;
+                            }
+                            let mut dev = BTreeMap::new();
+                            dev.insert("type".into(), "proxy".into());
+                            dev.insert("listen".into(), format!("tcp:0.0.0.0:{h}"));
+                            dev.insert("connect".into(), format!("tcp:127.0.0.1:{g}"));
+                            e.add_device(&format!("port{h}"), dev);
+                        },
+                    );
+                })
+                .icon("mail-forward-symbolic"),
+            );
         }
         let w = Rc::downgrade(self);
-        out.push(nyx_ui::menu::item("Network card", move || {
-            if let Some(e) = w.upgrade() {
-                let network = window::snapshot()
-                    .and_then(|s| s.networks.iter().find(|n| n.host == e.host && n.engine == crate::models::Engine::Incus && n.removable).map(|n| n.name.clone()))
-                    .unwrap_or_else(|| "incusbr0".into());
-                let mut dev = BTreeMap::new();
-                dev.insert("type".into(), "nic".into());
-                dev.insert("network".into(), network);
-                e.add_device("eth", dev);
-            }
-        }).icon("network-wired-symbolic"));
+        out.push(
+            nyx_ui::menu::item("Network card", move || {
+                if let Some(e) = w.upgrade() {
+                    let network = window::snapshot()
+                        .and_then(|s| {
+                            s.networks
+                                .iter()
+                                .find(|n| n.host == e.host && n.engine == crate::models::Engine::Incus && n.removable)
+                                .map(|n| n.name.clone())
+                        })
+                        .unwrap_or_else(|| "incusbr0".into());
+                    let mut dev = BTreeMap::new();
+                    dev.insert("type".into(), "nic".into());
+                    dev.insert("network".into(), network);
+                    e.add_device("eth", dev);
+                }
+            })
+            .icon("network-wired-symbolic"),
+        );
         if self.host == HostId::Local {
             let usb = local_usb();
             if !usb.is_empty() {
@@ -814,26 +903,36 @@ impl Editor {
             }
         }
         let w = Rc::downgrade(self);
-        out.push(nyx_ui::menu::item("GPU", move || {
-            if let Some(e) = w.upgrade() {
-                let mut dev = BTreeMap::new();
-                dev.insert("type".into(), "gpu".into());
-                if vm {
-                    dev.insert("gputype".into(), "physical".into());
-                }
-                e.add_device("gpu", dev);
-                window::toast(if vm { "A physical GPU passes through while the VM runs; the host loses it until then." } else { "The container shares this computer's GPU." });
-            }
-        }).icon("video-display-symbolic"));
-        if vm {
-            let w = Rc::downgrade(self);
-            out.push(nyx_ui::menu::item("TPM", move || {
+        out.push(
+            nyx_ui::menu::item("GPU", move || {
                 if let Some(e) = w.upgrade() {
                     let mut dev = BTreeMap::new();
-                    dev.insert("type".into(), "tpm".into());
-                    e.add_device("tpm", dev);
+                    dev.insert("type".into(), "gpu".into());
+                    if vm {
+                        dev.insert("gputype".into(), "physical".into());
+                    }
+                    e.add_device("gpu", dev);
+                    window::toast(if vm {
+                        "A physical GPU passes through while the VM runs; the host loses it until then."
+                    } else {
+                        "The container shares this computer's GPU."
+                    });
                 }
-            }).icon("security-high-symbolic"));
+            })
+            .icon("video-display-symbolic"),
+        );
+        if vm {
+            let w = Rc::downgrade(self);
+            out.push(
+                nyx_ui::menu::item("TPM", move || {
+                    if let Some(e) = w.upgrade() {
+                        let mut dev = BTreeMap::new();
+                        dev.insert("type".into(), "tpm".into());
+                        e.add_device("tpm", dev);
+                    }
+                })
+                .icon("security-high-symbolic"),
+            );
         }
         out
     }
@@ -854,7 +953,16 @@ impl Editor {
             let w = Rc::downgrade(e);
             let (row, _) = widgets::switch_row(title, desc, current, move |on| {
                 if let Some(e) = w.upgrade() {
-                    e.set_config(key, if on == default { "" } else if on { "true" } else { "false" });
+                    e.set_config(
+                        key,
+                        if on == default {
+                            ""
+                        } else if on {
+                            "true"
+                        } else {
+                            "false"
+                        },
+                    );
                 }
             });
             row
@@ -873,13 +981,31 @@ impl Editor {
             widgets::row(title, desc, Some(s.upcast_ref()))
         };
         self.options.append(&spin(self, "Start order", "Higher starts first.", "boot.autostart.priority", 100.0));
-        self.options.append(&spin(self, "Wait after starting", "Seconds before the next one starts.", "boot.autostart.delay", 600.0));
+        self.options.append(&spin(
+            self,
+            "Wait after starting",
+            "Seconds before the next one starts.",
+            "boot.autostart.delay",
+            600.0,
+        ));
         self.options.append(&section("Security"));
         if vm {
-            self.options.append(&switch(self, "Secure Boot", "Only boot signed systems. Turn off for most Linux ISOs that aren't signed.", "security.secureboot", true));
+            self.options.append(&switch(
+                self,
+                "Secure Boot",
+                "Only boot signed systems. Turn off for most Linux ISOs that aren't signed.",
+                "security.secureboot",
+                true,
+            ));
         } else {
             self.options.append(&switch(self, "Nesting", "Run Docker or containers inside it.", "security.nesting", false));
-            self.options.append(&switch(self, "Privileged", "Root inside is root on the host. Only for things that need it.", "security.privileged", false));
+            self.options.append(&switch(
+                self,
+                "Privileged",
+                "Root inside is root on the host. Only for things that need it.",
+                "security.privileged",
+                false,
+            ));
         }
         self.options.append(&section("Snapshots"));
         let schedule = self.config("snapshots.schedule");
@@ -891,7 +1017,12 @@ impl Editor {
             "@weekly" => "weekly",
             _ => "custom",
         };
-        let mut opts = vec![("off".to_string(), "Off".to_string()), ("hourly".into(), "Hourly".into()), ("daily".into(), "Daily".into()), ("weekly".into(), "Weekly".into())];
+        let mut opts = vec![
+            ("off".to_string(), "Off".to_string()),
+            ("hourly".into(), "Hourly".into()),
+            ("daily".into(), "Daily".into()),
+            ("weekly".into(), "Weekly".into()),
+        ];
         if current == "custom" {
             opts.push(("custom".into(), schedule.clone()));
         }
@@ -920,9 +1051,21 @@ impl Editor {
             });
             widgets::row(title, desc, Some(en.upcast_ref()))
         };
-        self.options.append(&entry(self, "Keep snapshots for", "Older automatic snapshots are deleted.", "snapshots.expiry", "2w"));
+        self.options.append(&entry(
+            self,
+            "Keep snapshots for",
+            "Older automatic snapshots are deleted.",
+            "snapshots.expiry",
+            "2w",
+        ));
         self.options.append(&section("Shortcuts"));
-        self.options.append(&entry(self, "Web UI address", "What its card's Web UI button opens.", "user.nyx.webui", "http://10.0.0.5:8080"));
+        self.options.append(&entry(
+            self,
+            "Web UI address",
+            "What its card's Web UI button opens.",
+            "user.nyx.webui",
+            "http://10.0.0.5:8080",
+        ));
         let yaml = gtk::Button::with_label("Edit as YAML…");
         let w = Rc::downgrade(self);
         yaml.connect_clicked(move |_| {
@@ -930,7 +1073,11 @@ impl Editor {
                 e.open_yaml();
             }
         });
-        self.options.append(&widgets::row("Everything else", "The instance's own config and devices, as Incus stores them.", Some(yaml.upcast_ref())));
+        self.options.append(&widgets::row(
+            "Everything else",
+            "The instance's own config and devices, as Incus stores them.",
+            Some(yaml.upcast_ref()),
+        ));
     }
 
     fn open_yaml(self: &Rc<Self>) {

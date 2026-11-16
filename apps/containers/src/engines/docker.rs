@@ -176,7 +176,8 @@ async fn list(docker: &Docker, host: HostId) -> Result<(String, Vec<Workload>), 
                 .and_then(|n| n.networks.as_ref())
                 .and_then(|nets| nets.values().find_map(|e| e.ip_address.clone().filter(|s| !s.is_empty())));
             let state = RunState::from_status(&c.state.map(|s| s.to_string()).unwrap_or_else(|| status.clone()));
-            let started = (state == RunState::Running).then(|| up_seconds(&status).map(|s| crate::models::now_secs() - s)).flatten();
+            let started =
+                (state == RunState::Running).then(|| up_seconds(&status).map(|s| crate::models::now_secs() - s)).flatten();
             Workload {
                 host,
                 engine: Engine::Docker,
@@ -514,7 +515,10 @@ fn cpu_percent(stats: &bollard::models::ContainerStatsResponse) -> Option<f64> {
 }
 
 /// One reading per running container: (id, CPU ns, system CPU ns, online CPUs, memory used, memory limit).
-pub async fn live_usage(host: HostId, remote: &RemoteProfile) -> Result<Vec<(String, u64, u64, u64, Option<u64>, Option<u64>)>, String> {
+pub async fn live_usage(
+    host: HostId,
+    remote: &RemoteProfile,
+) -> Result<Vec<(String, u64, u64, u64, Option<u64>, Option<u64>)>, String> {
     let docker = connect(host, remote).await?;
     let running = docker.list_containers(Some(ListContainersOptions::default())).await.map_err(|e| e.to_string())?;
     let reads = running.into_iter().filter_map(|c| c.id).map(|id| {
@@ -644,7 +648,10 @@ pub async fn disk_usage(host: HostId, remote: &RemoteProfile) -> Result<crate::m
         images: df.image_usage.map(|x| u(x.active_count, x.total_count, x.total_size, x.reclaimable)).unwrap_or_default(),
         containers: df.container_usage.map(|x| u(x.active_count, x.total_count, x.total_size, x.reclaimable)).unwrap_or_default(),
         volumes: df.volume_usage.map(|x| u(x.active_count, x.total_count, x.total_size, x.reclaimable)).unwrap_or_default(),
-        build_cache: df.build_cache_usage.map(|x| u(x.active_count, x.total_count, x.total_size, x.reclaimable)).unwrap_or_default(),
+        build_cache: df
+            .build_cache_usage
+            .map(|x| u(x.active_count, x.total_count, x.total_size, x.reclaimable))
+            .unwrap_or_default(),
     })
 }
 
@@ -659,9 +666,12 @@ pub async fn prune(host: HostId, remote: &RemoteProfile, what: crate::models::Pr
             let opts = bollard::query_parameters::PruneImagesOptions { filters: Some(filters) };
             docker.prune_images(Some(opts)).await.map_err(|e| e.to_string())?.space_reclaimed.unwrap_or(0)
         }
-        Prune::BuildCache => {
-            docker.prune_build(None::<bollard::query_parameters::PruneBuildOptions>).await.map_err(|e| e.to_string())?.space_reclaimed.unwrap_or(0)
-        }
+        Prune::BuildCache => docker
+            .prune_build(None::<bollard::query_parameters::PruneBuildOptions>)
+            .await
+            .map_err(|e| e.to_string())?
+            .space_reclaimed
+            .unwrap_or(0),
         Prune::Containers => docker
             .prune_containers(None::<bollard::query_parameters::PruneContainersOptions>)
             .await
@@ -748,10 +758,7 @@ pub async fn remove_network(host: HostId, remote: &RemoteProfile, name: &str) ->
 
 pub async fn list_volumes(host: HostId, remote: &RemoteProfile) -> Result<Vec<VolumeRow>, String> {
     let docker = connect(host, remote).await?;
-    let resp = docker
-        .list_volumes(None::<bollard::query_parameters::ListVolumesOptions>)
-        .await
-        .map_err(|e| e.to_string())?;
+    let resp = docker.list_volumes(None::<bollard::query_parameters::ListVolumesOptions>).await.map_err(|e| e.to_string())?;
     Ok(resp
         .volumes
         .unwrap_or_default()

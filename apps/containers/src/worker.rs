@@ -547,7 +547,9 @@ fn current_remote() -> RemoteProfile {
 }
 
 fn refresh_seconds() -> u64 {
-    std::fs::read_to_string(crate::paths::prefs_file()).ok()
+    std::fs::read_to_string(crate::paths::prefs_file())
+        .ok()
         .and_then(|text| toml::from_str::<crate::prefs::Prefs>(&text).ok())
-        .map(|p| p.refresh_seconds.clamp(2, 30)).unwrap_or(8)
+        .map(|p| p.refresh_seconds.clamp(2, 30))
+        .unwrap_or(8)
 }

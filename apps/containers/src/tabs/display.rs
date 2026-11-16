@@ -247,14 +247,12 @@ impl Display {
         d.wire_input();
         let weak = Rc::downgrade(&d);
         // On the root, not the picture: the picture isn't mapped until the first frame arrives.
-        d.root.add_tick_callback(move |_, clock| {
-            match weak.upgrade() {
-                Some(d) => {
-                    d.tick(clock.frame_time());
-                    glib::ControlFlow::Continue
-                }
-                None => glib::ControlFlow::Break,
+        d.root.add_tick_callback(move |_, clock| match weak.upgrade() {
+            Some(d) => {
+                d.tick(clock.frame_time());
+                glib::ControlFlow::Continue
             }
+            None => glib::ControlFlow::Break,
         });
         let message_weak = Rc::downgrade(&d);
         d.message_action.connect_clicked(move |_| {
@@ -348,12 +346,17 @@ impl Display {
                 });
                 if has_signal(channel, "channel-event") {
                     channel.connect_local("channel-event", false, move |args| {
-                        let event = args.get(1).map(|v| unsafe { glib::gobject_ffi::g_value_get_enum(v.to_glib_none().0) }).unwrap_or(0);
+                        let event =
+                            args.get(1).map(|v| unsafe { glib::gobject_ffi::g_value_get_enum(v.to_glib_none().0) }).unwrap_or(0);
                         if let Some(d) = weak.upgrade()
                             && event >= CHANNEL_CLOSED
                             && !d.closed.get()
                         {
-                            d.lost(if event == CHANNEL_CLOSED { "The display closed." } else { "The display connection failed." });
+                            d.lost(if event == CHANNEL_CLOSED {
+                                "The display closed."
+                            } else {
+                                "The display connection failed."
+                            });
                         }
                         None
                     });
@@ -426,7 +429,8 @@ impl Display {
                             // SAFETY: SPICE hands over width × height RGBA pixels for this call.
                             let pixels = unsafe { std::slice::from_raw_parts(ptr as *const u8, (width * height * 4) as usize) };
                             let bytes = glib::Bytes::from(pixels);
-                            let texture = gdk::MemoryTexture::new(width, height, gdk::MemoryFormat::R8g8b8a8, &bytes, (width * 4) as usize);
+                            let texture =
+                                gdk::MemoryTexture::new(width, height, gdk::MemoryFormat::R8g8b8a8, &bytes, (width * 4) as usize);
                             let cursor = gdk::Cursor::from_texture(&texture, hx, hy, None);
                             d.picture.set_cursor(Some(&cursor));
                         }
@@ -461,7 +465,8 @@ impl Display {
         if self.dirty.replace(false)
             && let Some(ch) = self.display.borrow().as_ref()
         {
-            let mut p = ffi::Primary { format: 0, width: 0, height: 0, stride: 0, shmid: 0, data: std::ptr::null_mut(), marked: 0 };
+            let mut p =
+                ffi::Primary { format: 0, width: 0, height: 0, stride: 0, shmid: 0, data: std::ptr::null_mut(), marked: 0 };
             // SAFETY: `p` is a valid out-parameter; the data stays valid until we return to the main loop.
             let ok = unsafe { ffi::spice_display_channel_get_primary(raw(ch), 0, &mut p) } != 0;
             if ok && !p.data.is_null() && p.width > 0 && p.height > 0 {
@@ -477,9 +482,9 @@ impl Display {
                 // Only the changed rectangle goes to the GPU when the size holds.
                 let previous = self.texture.borrow().clone().filter(|t| t.width() == p.width && t.height() == p.height);
                 let builder = match (previous, self.damage.take(), self.full_frame.replace(false)) {
-                    (Some(prev), Some((x, y, w, h)), false) => builder
-                        .set_update_texture(Some(&prev))
-                        .set_update_region(Some(&gtk::cairo::Region::create_rectangle(&gtk::cairo::RectangleInt::new(x, y, w, h)))),
+                    (Some(prev), Some((x, y, w, h)), false) => builder.set_update_texture(Some(&prev)).set_update_region(Some(
+                        &gtk::cairo::Region::create_rectangle(&gtk::cairo::RectangleInt::new(x, y, w, h)),
+                    )),
                     _ => builder,
                 };
                 let texture = builder.build();
@@ -526,11 +531,17 @@ impl Display {
     }
 
     fn agent(&self) -> bool {
-        self.main.borrow().as_ref().is_some_and(|m| m.find_property("agent-connected").is_some() && m.property::<bool>("agent-connected"))
+        self.main
+            .borrow()
+            .as_ref()
+            .is_some_and(|m| m.find_property("agent-connected").is_some() && m.property::<bool>("agent-connected"))
     }
 
     fn client_mouse(&self) -> bool {
-        self.main.borrow().as_ref().is_some_and(|m| m.find_property("mouse-mode").is_some() && m.property::<i32>("mouse-mode") == MOUSE_MODE_CLIENT)
+        self.main
+            .borrow()
+            .as_ref()
+            .is_some_and(|m| m.find_property("mouse-mode").is_some() && m.property::<i32>("mouse-mode") == MOUSE_MODE_CLIENT)
     }
 
     fn paint_status(&self) {
@@ -781,7 +792,9 @@ impl Display {
         });
         self.picture.add_controller(click);
 
-        let scroll = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL | gtk::EventControllerScrollFlags::DISCRETE);
+        let scroll = gtk::EventControllerScroll::new(
+            gtk::EventControllerScrollFlags::VERTICAL | gtk::EventControllerScrollFlags::DISCRETE,
+        );
         let weak = Rc::downgrade(self);
         scroll.connect_scroll(move |_, _, dy| {
             let Some(d) = weak.upgrade() else { return glib::Propagation::Proceed };
@@ -803,7 +816,10 @@ impl Display {
             let alt = state.contains(gdk::ModifierType::ALT_MASK);
             let modifier_key = matches!(keyval, gdk::Key::Control_L | gdk::Key::Control_R | gdk::Key::Alt_L | gdk::Key::Alt_R);
             // Ctrl+Alt: give the keyboard and mouse back.
-            if modifier_key && ((ctrl && matches!(keyval, gdk::Key::Alt_L | gdk::Key::Alt_R)) || (alt && matches!(keyval, gdk::Key::Control_L | gdk::Key::Control_R))) {
+            if modifier_key
+                && ((ctrl && matches!(keyval, gdk::Key::Alt_L | gdk::Key::Alt_R))
+                    || (alt && matches!(keyval, gdk::Key::Control_L | gdk::Key::Control_R)))
+            {
                 d.drop_capture();
                 return glib::Propagation::Stop;
             }
@@ -925,7 +941,11 @@ impl Display {
                 return;
             };
             let dir = glib::user_special_dir(glib::UserDirectory::Pictures).unwrap_or_else(glib::home_dir);
-            let stamp = glib::DateTime::now_local().ok().and_then(|t| t.format("%Y-%m-%d %H.%M.%S").ok()).map(|s| s.to_string()).unwrap_or_default();
+            let stamp = glib::DateTime::now_local()
+                .ok()
+                .and_then(|t| t.format("%Y-%m-%d %H.%M.%S").ok())
+                .map(|s| s.to_string())
+                .unwrap_or_default();
             let path = dir.join(format!("{} {stamp}.png", d.workload.name));
             match texture.save_to_png(&path) {
                 Ok(()) => window::toast(&format!("Saved {}", path.display())),
@@ -1175,10 +1195,27 @@ fn xt_scancode(evdev: u32) -> Option<u32> {
 /// The scancode and Shift state that types `c` on a US keyboard.
 fn us_key(c: char) -> Option<(u32, bool)> {
     const ROW: &[(char, char, u32)] = &[
-        ('1', '!', 0x02), ('2', '@', 0x03), ('3', '#', 0x04), ('4', '$', 0x05), ('5', '%', 0x06), ('6', '^', 0x07),
-        ('7', '&', 0x08), ('8', '*', 0x09), ('9', '(', 0x0a), ('0', ')', 0x0b), ('-', '_', 0x0c), ('=', '+', 0x0d),
-        ('[', '{', 0x1a), (']', '}', 0x1b), (';', ':', 0x27), ('\'', '"', 0x28), ('`', '~', 0x29), ('\\', '|', 0x2b),
-        (',', '<', 0x33), ('.', '>', 0x34), ('/', '?', 0x35),
+        ('1', '!', 0x02),
+        ('2', '@', 0x03),
+        ('3', '#', 0x04),
+        ('4', '$', 0x05),
+        ('5', '%', 0x06),
+        ('6', '^', 0x07),
+        ('7', '&', 0x08),
+        ('8', '*', 0x09),
+        ('9', '(', 0x0a),
+        ('0', ')', 0x0b),
+        ('-', '_', 0x0c),
+        ('=', '+', 0x0d),
+        ('[', '{', 0x1a),
+        (']', '}', 0x1b),
+        (';', ':', 0x27),
+        ('\'', '"', 0x28),
+        ('`', '~', 0x29),
+        ('\\', '|', 0x2b),
+        (',', '<', 0x33),
+        ('.', '>', 0x34),
+        ('/', '?', 0x35),
     ];
     const LETTERS: &str = "qwertyuiop";
     const HOME: &str = "asdfghjkl";

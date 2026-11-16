@@ -326,9 +326,8 @@ fn map_instance(host: HostId, i: IncusInstance) -> Workload {
     let cfg = if i.expanded_config.is_empty() { &i.config } else { &i.expanded_config };
     let image = i.config.get("image.description").cloned().or_else(|| os_label(&i.config));
     let state = RunState::from_status(&i.status);
-    let started = (state == RunState::Running)
-        .then(|| i.last_used_at.as_deref().and_then(crate::models::parse_rfc3339))
-        .flatten();
+    let started =
+        (state == RunState::Running).then(|| i.last_used_at.as_deref().and_then(crate::models::parse_rfc3339)).flatten();
     let mem_total = i.state.as_ref().and_then(|s| s.memory.as_ref()).and_then(|m| m.total).filter(|t| *t > 0);
     Workload {
         host,
@@ -343,7 +342,11 @@ fn map_instance(host: HostId, i: IncusInstance) -> Workload {
         ports: proxy_ports(&i.expanded_devices),
         started,
         autostart: cfg.get("boot.autostart").is_some_and(|v| v == "true" || v == "1"),
-        cpus: cfg.get("limits.cpu").and_then(|v| crate::models::parse_cpus(v)).or(if kind == Kind::VirtualMachine { Some(1.0) } else { None }),
+        cpus: cfg.get("limits.cpu").and_then(|v| crate::models::parse_cpus(v)).or(if kind == Kind::VirtualMachine {
+            Some(1.0)
+        } else {
+            None
+        }),
         mem_limit: cfg.get("limits.memory").and_then(|v| crate::models::parse_size(v)).or(mem_total),
         os: os_label(&i.config),
         snapshots: i.snapshots.as_ref().map(Vec::len).unwrap_or(0),
@@ -353,7 +356,10 @@ fn map_instance(host: HostId, i: IncusInstance) -> Workload {
 }
 
 /// Cumulative CPU nanoseconds and memory for every running instance, for live graphs.
-pub async fn live_usage(host: HostId, remote: &RemoteProfile) -> Result<Vec<(String, u64, Option<u64>, Option<f64>, Option<u64>)>, String> {
+pub async fn live_usage(
+    host: HostId,
+    remote: &RemoteProfile,
+) -> Result<Vec<(String, u64, Option<u64>, Option<f64>, Option<u64>)>, String> {
     let conn = connect(host, remote).await?;
     let instances: Vec<IncusInstance> = call(&conn, Method::GET, "/1.0/instances?recursion=2", None).await?;
     Ok(instances
@@ -365,10 +371,11 @@ pub async fn live_usage(host: HostId, remote: &RemoteProfile) -> Result<Vec<(Str
             let cfg = if i.expanded_config.is_empty() { &i.config } else { &i.expanded_config };
             let cpus = cfg.get("limits.cpu").and_then(|v| crate::models::parse_cpus(v));
             let mem = st.memory.as_ref().and_then(|m| m.usage);
-            let limit = cfg
-                .get("limits.memory")
-                .and_then(|v| crate::models::parse_size(v))
-                .or(st.memory.as_ref().and_then(|m| m.total).filter(|t| *t > 0));
+            let limit = cfg.get("limits.memory").and_then(|v| crate::models::parse_size(v)).or(st
+                .memory
+                .as_ref()
+                .and_then(|m| m.total)
+                .filter(|t| *t > 0));
             Some((i.name.clone(), ns, mem, cpus, limit))
         })
         .collect())
@@ -777,7 +784,9 @@ pub async fn instance_config(host: HostId, remote: &RemoteProfile, name: &str) -
     let raw: Value = call(&conn, Method::GET, &format!("/1.0/instances/{}", enc(name)), None).await?;
     let map = |v: Option<&Value>| -> std::collections::BTreeMap<String, String> {
         v.and_then(|v| v.as_object())
-            .map(|o| o.iter().map(|(k, v)| (k.clone(), v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string()))).collect())
+            .map(|o| {
+                o.iter().map(|(k, v)| (k.clone(), v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string()))).collect()
+            })
             .unwrap_or_default()
     };
     let devs = |v: Option<&Value>| -> std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>> {
@@ -788,7 +797,11 @@ pub async fn instance_config(host: HostId, remote: &RemoteProfile, name: &str) -
         devices: devs(raw.get("devices")),
         expanded_config: map(raw.get("expanded_config")),
         expanded_devices: devs(raw.get("expanded_devices")),
-        profiles: raw.get("profiles").and_then(|p| p.as_array()).map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default(),
+        profiles: raw
+            .get("profiles")
+            .and_then(|p| p.as_array())
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+            .unwrap_or_default(),
         vm: raw.get("type").and_then(|t| t.as_str()).is_some_and(|t| t.contains("virtual")),
         running: raw.get("status").and_then(|t| t.as_str()).is_some_and(|t| t == "Running"),
     })
@@ -910,7 +923,8 @@ pub async fn storage_pools(host: HostId, remote: &RemoteProfile) -> Result<Vec<c
     for pool in pools {
         let name = pool.get("name").and_then(|v| v.as_str()).unwrap_or_default().to_string();
         let driver = pool.get("driver").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-        let res: Value = call(&conn, Method::GET, &format!("/1.0/storage-pools/{}/resources", enc(&name)), None).await.unwrap_or(Value::Null);
+        let res: Value =
+            call(&conn, Method::GET, &format!("/1.0/storage-pools/{}/resources", enc(&name)), None).await.unwrap_or(Value::Null);
         out.push(crate::models::PoolInfo {
             name,
             driver,

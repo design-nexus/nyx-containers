@@ -25,7 +25,10 @@ pub fn build(page: &Page) {
 pub fn refresh(snapshot: &Snapshot, host: HostFilter, query: &str) {
     let Some(ui) = UI.with(|u| u.borrow().clone()) else { return };
     let q = query.trim().to_ascii_lowercase();
-    let mut images: Vec<_> = snapshot.images(host).filter(|i| q.is_empty() || i.name.to_ascii_lowercase().contains(&q) || i.id.to_ascii_lowercase().contains(&q)).collect();
+    let mut images: Vec<_> = snapshot
+        .images(host)
+        .filter(|i| q.is_empty() || i.name.to_ascii_lowercase().contains(&q) || i.id.to_ascii_lowercase().contains(&q))
+        .collect();
     images.sort_by_key(|i| (i.engine != Engine::Docker, i.host, i.name.to_ascii_lowercase()));
     let items = images
         .into_iter()
@@ -34,7 +37,11 @@ pub fn refresh(snapshot: &Snapshot, host: HostFilter, query: &str) {
                 .workloads
                 .iter()
                 .filter(|w| w.host == img.host && w.engine == Engine::Docker && img.engine == Engine::Docker)
-                .filter(|w| w.image.as_deref().is_some_and(|i| i == img.name || img.id.ends_with(i.trim_start_matches("sha256:")) || format!("{i}:latest") == img.name))
+                .filter(|w| {
+                    w.image.as_deref().is_some_and(|i| {
+                        i == img.name || img.id.ends_with(i.trim_start_matches("sha256:")) || format!("{i}:latest") == img.name
+                    })
+                })
                 .map(|w| w.name.clone())
                 .collect();
             let dangling = img.name.contains("<none>") || img.name.chars().all(|c| c.is_ascii_hexdigit());
@@ -171,4 +178,3 @@ fn open_pull() {
     });
     dialog.present();
 }
-

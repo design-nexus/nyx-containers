@@ -297,11 +297,7 @@ pub fn compose_file_from_labels(working_dir: Option<&str>, config_files: Option<
         Some(first.to_string())
     } else {
         let dir = working_dir?.trim_end_matches('/');
-        if dir.is_empty() {
-            None
-        } else {
-            Some(format!("{dir}/{first}"))
-        }
+        if dir.is_empty() { None } else { Some(format!("{dir}/{first}")) }
     }
 }
 
@@ -881,14 +877,8 @@ mod tests {
 
     #[test]
     fn compose_file_joins_relative_config() {
-        assert_eq!(
-            compose_file_from_labels(Some("/srv/app"), Some("compose.yaml")),
-            Some("/srv/app/compose.yaml".into())
-        );
-        assert_eq!(
-            compose_file_from_labels(Some("/srv/app"), Some("/etc/compose.yaml")),
-            Some("/etc/compose.yaml".into())
-        );
+        assert_eq!(compose_file_from_labels(Some("/srv/app"), Some("compose.yaml")), Some("/srv/app/compose.yaml".into()));
+        assert_eq!(compose_file_from_labels(Some("/srv/app"), Some("/etc/compose.yaml")), Some("/etc/compose.yaml".into()));
         assert_eq!(compose_file_from_labels(None, Some("compose.yaml")), None);
     }
 

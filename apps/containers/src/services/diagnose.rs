@@ -5,8 +5,32 @@ use crate::models::{CheckId, CheckLevel, DiagCheck, DiagReport, HostId};
 use crate::prefs::RemoteProfile;
 use std::path::Path;
 
+/// The account this runs as: `$USER`, else looked up from the user ID.
 pub fn user() -> String {
-    std::env::var("USER").unwrap_or_else(|_| "ken".into())
+    std::env::var("USER")
+        .ok()
+        .filter(|u| !u.is_empty())
+        .or_else(|| {
+            let out = std::process::Command::new("id").arg("-un").output().ok()?;
+            let name = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            (!name.is_empty()).then_some(name)
+        })
+        .unwrap_or_default()
+}
+
+/// NyxOS (NixOS): software, services and groups come from the system configuration,
+/// which the Store changes, asking first; nothing is installed or joined by hand.
+pub fn nixos() -> bool {
+    Path::new("/etc/NIXOS").exists()
+}
+
+/// Groups that let any program you run take over the computer.
+const ROOT_EQUIVALENT: &str =
+    "Being in it is the same as administrator rights: any program you run can take full control of this computer.";
+
+/// The Store, at the catalog item that brings `what` with its service and group.
+fn store_for(what: &str) -> String {
+    format!("nyx-store --search {what}")
 }
 
 fn in_session(name: &str) -> bool {
@@ -37,7 +61,7 @@ fn group_check(id: CheckId, group: &str) -> DiagCheck {
             command: None,
         };
     }
-    fail(id, format!("This user is not in the {group} group."))
+    fail(id, format!("This user is not in the {group} group. {ROOT_EQUIVALENT}"))
 }
 
 fn on_path(bin: &str) -> bool {
@@ -54,6 +78,13 @@ fn which(bin: &str) -> Option<std::path::PathBuf> {
 
 pub fn command_for(id: CheckId) -> String {
     let user = user();
+    if nixos() {
+        match id {
+            CheckId::DockerPkg | CheckId::DockerGroup | CheckId::DockerDaemon => return store_for("docker"),
+            CheckId::IncusPkg | CheckId::IncusGroup | CheckId::IncusDaemon => return store_for("incus"),
+            CheckId::IncusInit | CheckId::Vte => {}
+        }
+    }
     match id {
         CheckId::DockerPkg => "pacman -S --needed docker docker-compose".into(),
         CheckId::DockerGroup => format!("usermod -aG docker {user}"),
@@ -75,7 +106,10 @@ pub async fn report(remote: &RemoteProfile) -> DiagReport {
     push(&mut checks, incus_group());
     push(&mut checks, incus_daemon().await);
     push(&mut checks, incus_init(remote).await);
-    push(&mut checks, vte());
+    // A Nix build links VTE in; there's no package to look for.
+    if !nixos() {
+        push(&mut checks, vte());
+    }
     DiagReport { checks }
 }
 
@@ -168,6 +202,14 @@ fn fail(id: CheckId, detail: impl Into<String>) -> DiagCheck {
 
 pub fn run_fix(id: CheckId) -> Result<String, String> {
     let cmd = command_for(id);
+    if let Some(what) = cmd.strip_prefix("nyx-store --search ") {
+        return match std::process::Command::new("nyx-store").args(["--search", what]).spawn() {
+            Ok(_) => Ok(format!(
+                "Opened the Store at {what}. Installing it there sets up the service and your group, asking first; then log out and back in."
+            )),
+            Err(e) => Err(format!("The Store couldn't be opened: {e}")),
+        };
+    }
     let mut parts = cmd.split_whitespace();
     let bin = parts.next().ok_or_else(|| "empty command".to_string())?;
     let args: Vec<&str> = parts.collect();
@@ -201,6 +243,16 @@ mod tests {
         let cmd = command_for(CheckId::DockerGroup);
         assert!(cmd.contains("usermod"));
         assert!(cmd.contains("docker"));
+    }
+
+    #[test]
+    fn no_literal_user_and_nixos_goes_through_the_store() {
+        assert!(!user().is_empty());
+        if nixos() {
+            for id in [CheckId::DockerPkg, CheckId::DockerGroup, CheckId::IncusGroup, CheckId::IncusDaemon] {
+                assert!(command_for(id).starts_with("nyx-store "), "{id:?}");
+            }
+        }
     }
 
     #[test]

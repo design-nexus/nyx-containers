@@ -8,14 +8,16 @@ pub mod hardware;
 pub mod inspect;
 
 use crate::history;
-use crate::models::{Engine, HostId, InstanceSnap, Kind, RunState, SnapAction, Snapshot, Stack, TermKind, Workload, WorkloadDetail};
+use crate::models::{
+    Engine, HostId, InstanceSnap, Kind, RunState, SnapAction, Snapshot, Stack, TermKind, Workload, WorkloadDetail,
+};
 use crate::sections::{actions, cards::short_bytes, session};
 use crate::{widgets, window, worker};
 use gtk::prelude::*;
-use vte4::prelude::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use vte4::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Target {
@@ -70,9 +72,11 @@ pub fn info(target: &Target, snap: &Snapshot) -> Info {
                 None => Info { title: name.chars().take(24).collect(), icon: "dialog-question-symbolic", tooltip: "Gone".into() },
             }
         }
-        Target::Stack { host, project } => {
-            Info { title: project.clone(), icon: "view-list-symbolic", tooltip: format!("Stack {project} · {}", window::host_name(*host)) }
-        }
+        Target::Stack { host, project } => Info {
+            title: project.clone(),
+            icon: "view-list-symbolic",
+            tooltip: format!("Stack {project} · {}", window::host_name(*host)),
+        },
     }
 }
 
@@ -278,9 +282,8 @@ pub fn set_toolbars_visible(visible: bool) {
 
 /// A terminal or a captured VM display has the keyboard.
 pub fn focus_grabbed(window: &gtk::ApplicationWindow) -> bool {
-    gtk::prelude::GtkWindowExt::focus(window).is_some_and(|f| {
-        f.has_css_class("grabs-keys") || f.ancestor(vte4::Terminal::static_type()).is_some()
-    })
+    gtk::prelude::GtkWindowExt::focus(window)
+        .is_some_and(|f| f.has_css_class("grabs-keys") || f.ancestor(vte4::Terminal::static_type()).is_some())
 }
 
 pub fn refresh(snap: &Snapshot) {
@@ -299,7 +302,11 @@ pub fn apply_detail(detail: WorkloadDetail) {
     let key = crate::models::workload_key(detail.host, detail.engine, &detail.name);
     let ui = TABS.with(|t| {
         let t = t.borrow();
-        t.get(&key).cloned().or_else(|| t.values().find(|u| u.workload.borrow().as_ref().is_some_and(|w| w.name == detail.name && w.host == detail.host)).cloned())
+        t.get(&key).cloned().or_else(|| {
+            t.values()
+                .find(|u| u.workload.borrow().as_ref().is_some_and(|w| w.name == detail.name && w.host == detail.host))
+                .cloned()
+        })
     });
     let Some(ui) = ui else { return };
     let summary = ui.summary.borrow();
@@ -327,7 +334,8 @@ pub fn apply_detail(detail: WorkloadDetail) {
 
 pub fn apply_snaps(host: HostId, instance: &str, snaps: &[InstanceSnap]) {
     for ui in TABS.with(|t| t.borrow().values().cloned().collect::<Vec<_>>()) {
-        let matches = ui.workload.borrow().as_ref().is_some_and(|w| w.host == host && w.name == instance && w.engine == Engine::Incus);
+        let matches =
+            ui.workload.borrow().as_ref().is_some_and(|w| w.host == host && w.name == instance && w.engine == Engine::Incus);
         if matches && let Some(list) = ui.snaps.borrow().as_ref() {
             fill_snaps(list, host, instance, snaps);
         }
@@ -440,7 +448,12 @@ fn build_view(ui: &Rc<TabUi>, view: &str) -> gtk::Widget {
     match (view, &ui.target) {
         ("summary", _) => build_summary(ui),
         ("logs", Target::Stack { host, project }) => {
-            let names = ui.stack.borrow().as_ref().map(|(_, s)| s.iter().map(|w| w.target_id().to_string()).collect()).unwrap_or_default();
+            let names = ui
+                .stack
+                .borrow()
+                .as_ref()
+                .map(|(_, s)| s.iter().map(|w| w.target_id().to_string()).collect())
+                .unwrap_or_default();
             let (root, seq) = session::logs_view(*host, Engine::Docker, names, project);
             ui.seqs.borrow_mut().push(seq);
             padded(&root)
@@ -462,7 +475,11 @@ fn build_view(ui: &Rc<TabUi>, view: &str) -> gtk::Widget {
                 let bar = widgets::hbox(6);
                 bar.add_css_class("tab-subbar");
                 bar.append(&widgets::label(
-                    &format!("{} on {}", if w.engine == Engine::Docker { "Shell in the container" } else { "Shell" }, window::host_name(w.host)),
+                    &format!(
+                        "{} on {}",
+                        if w.engine == Engine::Docker { "Shell in the container" } else { "Shell" },
+                        window::host_name(w.host)
+                    ),
                     "dim",
                 ));
                 let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
@@ -575,16 +592,32 @@ fn open_console(ui: &Rc<TabUi>, w: &Workload) {
 
 fn open_external_terminal(w: &Workload) {
     let cmd: Vec<String> = match (w.engine, w.host) {
-        (Engine::Incus, HostId::Local) => vec!["incus".into(), "exec".into(), w.name.clone(), "--".into(), "sh".into(), "-c".into(), "exec bash || exec sh".into()],
-        (Engine::Docker, HostId::Local) => vec!["docker".into(), "exec".into(), "-it".into(), w.target_id().to_string(), "sh".into(), "-c".into(), "exec bash || exec sh".into()],
+        (Engine::Incus, HostId::Local) => vec![
+            "incus".into(),
+            "exec".into(),
+            w.name.clone(),
+            "--".into(),
+            "sh".into(),
+            "-c".into(),
+            "exec bash || exec sh".into(),
+        ],
+        (Engine::Docker, HostId::Local) => vec![
+            "docker".into(),
+            "exec".into(),
+            "-it".into(),
+            w.target_id().to_string(),
+            "sh".into(),
+            "-c".into(),
+            "exec bash || exec sh".into(),
+        ],
         _ => {
             window::toast("Opening a remote shell in another terminal isn't set up yet; use the Terminal view.");
             return;
         }
     };
-    let launcher = ["xdg-terminal-exec", "alacritty", "kitty", "foot", "ghostty"].into_iter().find(|t| {
-        std::env::var_os("PATH").is_some_and(|p| std::env::split_paths(&p).any(|d| d.join(t).exists()))
-    });
+    let launcher = ["xdg-terminal-exec", "alacritty", "kitty", "foot", "ghostty"]
+        .into_iter()
+        .find(|t| std::env::var_os("PATH").is_some_and(|p| std::env::split_paths(&p).any(|d| d.join(t).exists())));
     let Some(term) = launcher else {
         window::toast("No terminal app found.");
         return;
@@ -680,11 +713,14 @@ fn paint_summary(ui: &Rc<TabUi>) {
     s.status.set_text(&format!("{}{uptime}", w.state.label()));
     clear(&s.facts);
     s.facts.append(&kv("Host", &window::host_name(w.host)));
-    s.facts.append(&kv("Type", match (w.engine, w.kind) {
-        (Engine::Incus, Kind::VirtualMachine) => "Virtual machine (Incus)",
-        (Engine::Incus, _) => "Linux container (Incus)",
-        _ => "Docker container",
-    }));
+    s.facts.append(&kv(
+        "Type",
+        match (w.engine, w.kind) {
+            (Engine::Incus, Kind::VirtualMachine) => "Virtual machine (Incus)",
+            (Engine::Incus, _) => "Linux container (Incus)",
+            _ => "Docker container",
+        },
+    ));
     if let Some(os) = &w.os {
         s.facts.append(&kv("System", os));
     }
@@ -733,7 +769,8 @@ fn build_snapshots(ui: &Rc<TabUi>, w: &Workload) -> gtk::Widget {
     let root = widgets::vbox(12);
     root.add_css_class("tab-pad");
     let bar = widgets::hbox(8);
-    let note = widgets::label("Snapshots keep the disk as it is now, so you can roll back. VMs can keep their memory too.", "dim");
+    let note =
+        widgets::label("Snapshots keep the disk as it is now, so you can roll back. VMs can keep their memory too.", "dim");
     note.set_xalign(0.0);
     note.set_wrap(true);
     note.set_hexpand(true);
@@ -847,7 +884,8 @@ fn build_compose(ui: &Rc<TabUi>) -> gtk::Widget {
     let buffer = sourceview5::Buffer::new(None::<&gtk::TextTagTable>);
     buffer.set_language(sourceview5::LanguageManager::default().language("yaml").as_ref());
     widgets::apply_source_scheme(&buffer);
-    let text = crate::sections::stacks::load_yaml(&stack).unwrap_or_else(|| "# The compose file isn't readable from here.\n".into());
+    let text =
+        crate::sections::stacks::load_yaml(&stack).unwrap_or_else(|| "# The compose file isn't readable from here.\n".into());
     buffer.set_text(&text);
     let view = sourceview5::View::with_buffer(&buffer);
     view.set_monospace(true);

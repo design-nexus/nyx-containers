@@ -77,7 +77,9 @@ pub fn serve(app: &gtk::Application) {
 
 fn runtime() -> &'static tokio::runtime::Runtime {
     static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-    RT.get_or_init(|| tokio::runtime::Builder::new_multi_thread().worker_threads(1).enable_all().build().expect("containers control"))
+    RT.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread().worker_threads(1).enable_all().build().expect("containers control")
+    })
 }
 
 /// This computer's workloads, Docker's and Incus's.
@@ -147,7 +149,10 @@ fn handle(app: &gtk::Application, action: &str, args: &Value, answer: Answer) {
     };
     nyx_core::cmd::background(
         move || -> Result<String, String> {
-            let found = local().into_iter().find(|w| w.name == name).ok_or_else(|| format!("No container or machine called “{name}” on this computer"))?;
+            let found = local()
+                .into_iter()
+                .find(|w| w.name == name)
+                .ok_or_else(|| format!("No container or machine called “{name}” on this computer"))?;
             let remote = RemoteProfile::default();
             runtime().block_on(async {
                 match found.engine {
