@@ -92,5 +92,3 @@ workload or stack in a tab (with `--view display`, `terminal`, `logs`,
 - Compose deploys run on this computer; remote stacks can be viewed and
   started or stopped.
 - No Kubernetes, clusters, HA, users and permissions, or web dashboard.
-
-Suite registration and a public GitHub repo stay off until you ask.

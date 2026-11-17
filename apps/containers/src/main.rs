@@ -1,4 +1,4 @@
-//! Containers — Incus and Docker management for Omarchy.
+//! Containers — Incus and Docker management for NyxOS and Omarchy.
 
 mod cmd;
 mod control;
