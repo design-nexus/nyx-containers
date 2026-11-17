@@ -454,14 +454,17 @@ fn https_client(profile: &RemoteProfile) -> Result<(reqwest::Client, String, Arc
 
 fn load_certs(path: &Path) -> Result<Vec<CertificateDer<'static>>, RemoteError> {
     let data = std::fs::read(path).map_err(|e| RemoteError::Other(format!("{}: {e}", path.display())))?;
-    rustls_pemfile::certs(&mut data.as_slice()).collect::<Result<Vec<_>, _>>().map_err(|e| RemoteError::Other(e.to_string()))
+    use rustls_pki_types::pem::PemObject;
+    CertificateDer::pem_slice_iter(&data).collect::<Result<Vec<_>, _>>().map_err(|e| RemoteError::Other(e.to_string()))
 }
 
 fn load_key(path: &Path) -> Result<PrivateKeyDer<'static>, RemoteError> {
     let data = std::fs::read(path).map_err(|e| RemoteError::Other(format!("{}: {e}", path.display())))?;
-    rustls_pemfile::private_key(&mut data.as_slice())
-        .map_err(|e| RemoteError::Other(e.to_string()))?
-        .ok_or_else(|| RemoteError::Other(format!("no private key in {}", path.display())))
+    use rustls_pki_types::pem::{self, PemObject};
+    PrivateKeyDer::from_pem_slice(&data).map_err(|e| match e {
+        pem::Error::NoItemsFound => RemoteError::Other(format!("no private key in {}", path.display())),
+        e => RemoteError::Other(e.to_string()),
+    })
 }
 
 async fn unix_call<T: serde::de::DeserializeOwned>(

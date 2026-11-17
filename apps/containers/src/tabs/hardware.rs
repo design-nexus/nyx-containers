@@ -1085,7 +1085,7 @@ impl Editor {
         let (dialog, card) = widgets::dialog(&format!("{} as YAML", self.name), 720);
         dialog.set_default_height(600);
         let d = self.draft.borrow();
-        let doc = serde_yaml::to_string(&serde_json::json!({ "config": d.config, "devices": d.devices })).unwrap_or_default();
+        let doc = serde_yaml_ng::to_string(&serde_json::json!({ "config": d.config, "devices": d.devices })).unwrap_or_default();
         drop(d);
         let buffer = sourceview5::Buffer::new(None::<&gtk::TextTagTable>);
         buffer.set_language(sourceview5::LanguageManager::default().language("yaml").as_ref());
@@ -1121,7 +1121,7 @@ impl Editor {
                 #[serde(default)]
                 devices: Devices,
             }
-            match serde_yaml::from_str::<Doc>(&text) {
+            match serde_yaml_ng::from_str::<Doc>(&text) {
                 Ok(doc) => {
                     {
                         let mut d = e.draft.borrow_mut();

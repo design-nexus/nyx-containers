@@ -57,7 +57,7 @@ pub async fn pull(host: HostId, project: &str, dir: &str, file: &str) -> Result<
 }
 
 pub fn validate_yaml(text: &str) -> Result<(), String> {
-    let value: serde_yaml::Value = serde_yaml::from_str(text).map_err(|e| format!("Invalid YAML: {e}"))?;
+    let value: serde_yaml_ng::Value = serde_yaml_ng::from_str(text).map_err(|e| format!("Invalid YAML: {e}"))?;
     if value.is_null() {
         return Err("Compose file is empty.".into());
     }
