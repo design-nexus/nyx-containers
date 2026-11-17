@@ -39,6 +39,8 @@ desktop rather than a datacenter. No agent, no web UI.
 
 ## Install
 
+On NyxOS, choose Containers in Welcome when you set up, or install it later from the Store or with `nyx install nyx-containers`. On Omarchy:
+
 ```sh
 curl -fsSL https://raw.githubusercontent.com/design-nexus/nyx-containers/main/install.sh | bash
 ```
